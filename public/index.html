@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>TabeDog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tiny5&family=Urbanist:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<style>
+  :root {
+    --bg: #fdfffc; --ink: #1a1c1a; --muted: #6f736f; --line: #e8eae5; --hover: #f3f5f0;
+    --accent: #ff6347; --accent-ink: #d9472e; --ok: #2e9e5b; --no: #ff6347;
+    --shadow: 0 4px 18px rgba(26,28,26,.14), 0 1px 3px rgba(26,28,26,.08);
+    --side: 380px; --gap: 16px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: "Urbanist", system-ui, sans-serif; -webkit-font-smoothing: antialiased; position: relative; overflow: hidden; }
+
+  /* ---- type: 2 headings, 2 paragraphs, 1 subtext ---- */
+  .h1 { font-size: 20px; font-weight: 800; line-height: 1; margin: 0; letter-spacing: -.3px; }
+  .h2, h2 { font-size: 15px; font-weight: 700; line-height: 1.25; margin: 0; }
+  .p1, input, button { font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1.35; margin: 0; }
+  .p2 { font-size: 13px; font-weight: 400; line-height: 1.35; margin: 0; color: var(--ink); }
+  .sub { font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--muted); margin: 0; }
+
+  /* ---- map fills the page ---- */
+  #map { position: absolute; inset: 0; background: #f2f0ea; }
+  .maplibregl-ctrl-attrib { font-size: 10px; background: rgba(253,255,252,.8) !important; }
+  .maplibregl-popup-content { border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; font-family: inherit; color: var(--ink); background: var(--bg); max-width: 260px; }
+  .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--bg) !important; }
+  .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--bg) !important; }
+  .maplibregl-popup-close-button { font-size: 18px; padding: 2px 8px; color: var(--muted); }
+  .popup a { color: var(--accent-ink); text-decoration: none; display: inline-block; margin-top: 6px; }
+
+  /* ---- floating pieces share one surface ---- */
+  .float { background: var(--bg); border-radius: 18px; box-shadow: var(--shadow); }
+
+  /* ---- sidebar ---- */
+  aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap); width: var(--side); z-index: 10; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+  #toolbar { position: relative; padding: 14px 14px 12px 18px; border-bottom: 1px solid var(--line); }
+  #toolbar .row { display: flex; align-items: center; gap: 6px; }
+  .brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; color: var(--accent); }
+  .brand .h1 { color: var(--ink); }
+  #count { margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon { width: 36px; height: 36px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; position: relative; }
+  .icon:hover, .icon.open { background: var(--hover); }
+  .icon .badge { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; font-style: normal; }
+  .progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; display: none; }
+  .loading .progress { display: block; }
+  .progress i, #areaBar .bar i { display: block; height: 100%; width: 40%; background: var(--accent); border-radius: 2px; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
+  /* ---- panels (filters / sort) ---- */
+  .panel { position: absolute; top: 62px; right: 10px; z-index: 10; width: calc(100% - 20px); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px 16px; }
+  .panel .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .panel .sub { margin-top: 14px; }
+  .panel .sub:first-child { margin-top: 0; }
+  .chip { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .chip:hover { background: var(--hover); }
+  .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; margin-left: auto; }
+  .seg button { height: 30px; padding: 0 12px; border: 0; background: none; color: var(--muted); cursor: pointer; }
+  .seg button.on { background: var(--hover); color: var(--ink); }
+  .panel .foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .link { border: 0; background: none; color: var(--accent-ink); cursor: pointer; padding: 4px 0; }
+  .opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 6px; border: 0; background: none; color: var(--ink); cursor: pointer; border-radius: 10px; text-align: left; }
+  .opt:hover { background: var(--hover); }
+  .opt i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+  .opt.on i { border: 6px solid var(--accent); }
+
+  /* ---- list ---- */
+  #list { overflow-y: auto; overscroll-behavior: contain; }
+  .card { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: start; }
+  .card:hover, .card.active { background: var(--hover); }
+  .card img, .card .noimg { width: 64px; height: 64px; object-fit: cover; border-radius: 12px; background: var(--line); }
+  .card h2 { display: flex; gap: 8px; align-items: baseline; }
+  .card h2 .n { color: var(--muted); font-weight: 600; flex: none; }
+  .card .p1 { margin-top: 3px; }
+  .card .p2 { margin-top: 2px; color: var(--muted); }
+  .star { color: var(--accent-ink); font-weight: 700; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 4px 1px 0; }
+  .dot.ok { background: var(--ok); } .dot.no { background: var(--no); }
+  .empty { padding: 28px 16px; }
+  .empty .p2 { color: var(--muted); margin-top: 6px; }
+  #sentinel { height: 1px; }
+
+  /* ---- markers ---- */
+  .pin { width: 30px; height: 30px; background: var(--accent); color: #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid var(--bg);
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: pointer; }
+  .pin span { transform: rotate(45deg); font-size: 12px; font-weight: 800; }
+  .pin.active { background: var(--ink); }
+  .maplibregl-marker:has(.pin.active) { z-index: 5; }
+  .person { width: 34px; height: 34px; border-radius: 50%; background: var(--ink); border: 3px solid var(--bg); box-shadow: 0 2px 8px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; color: var(--bg); position: relative; }
+  .person::before { content: ""; position: absolute; inset: -10px; border-radius: 50%; background: rgba(26,28,26,.2); animation: pulse 2.4s ease-out infinite; z-index: -1; }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+  .person.coarse { background: #9a9e9a; }
+  .person.coarse::before { background: rgba(154,158,154,.25); }
+
+  /* ---- map controls (custom, same surface) ---- */
+  #ctl { position: absolute; right: var(--gap); top: var(--gap); z-index: 10; display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; }
+  #ctl button, #recenter { width: 42px; height: 42px; border: 0; background: var(--bg); color: var(--ink); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+  #ctl button + button { border-top: 1px solid var(--line); }
+  #ctl button:hover, #recenter:hover { background: var(--hover); }
+  #recenter { position: absolute; right: var(--gap); bottom: 36px; z-index: 10; border-radius: 14px; display: none; color: var(--accent-ink); }
+  #recenter.show { display: flex; }
+
+  /* ---- bottom centre: area pill above the search bar ---- */
+  #dock { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 15; width: min(520px, calc(100vw - 2 * var(--gap))); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #areaBar { display: flex; flex-direction: column; overflow: hidden; min-width: 200px; border-radius: 22px;
+    opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; transform: translateY(8px); }
+  #areaBar.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  #areaBar button { border: 0; background: none; padding: 11px 18px 11px 16px; font-weight: 700; color: var(--ink); cursor: pointer; display: flex; gap: 8px; align-items: center; justify-content: center; }
+  #areaBar button svg { color: var(--accent); }
+  #areaBar button:hover { background: var(--hover); }
+  #areaBar button:disabled { color: var(--muted); cursor: default; background: none; }
+  #areaBar .bar { height: 3px; background: var(--line); display: none; }
+  #areaBar.loading .bar { display: block; }
+  #search { width: 100%; position: relative; border-radius: 25px; }
+  #search form { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 14px 0 18px; }
+  #search:focus-within { box-shadow: 0 6px 24px rgba(26,28,26,.2), 0 1px 3px rgba(26,28,26,.08); }
+  #search form > svg { flex: none; color: var(--accent); }
+  #q { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
+  #q::placeholder { color: var(--muted); }
+  #q::-webkit-search-cancel-button { display: none; }
+  #clearQ { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; line-height: 0; }
+  #suggest { position: absolute; bottom: 58px; left: 0; right: 0; overflow: hidden; padding: 6px 0; }
+  #suggest div { padding: 9px 18px; cursor: pointer; }
+  #suggest div:hover, #suggest div.sel { background: var(--hover); }
+  #ctx { position: absolute; z-index: 16; padding: 4px; border-radius: 12px; }
+  #ctx button { border: 0; background: none; color: var(--ink); padding: 9px 14px; border-radius: 9px; cursor: pointer; display: block; width: 100%; text-align: left; white-space: nowrap; }
+  #ctx button:hover { background: var(--hover); }
+
+  @media (max-width: 800px) {
+    :root { --gap: 10px; }
+    aside { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 44vh; border-radius: 18px 18px 0 0; }
+    #dock { bottom: calc(44vh + 12px); }
+    #recenter { bottom: calc(44vh + 12px); }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<aside class="float">
+  <div id="toolbar">
+    <div class="row">
+      <div class="brand">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="currentColor" fill-rule="evenodd" aria-hidden="true">
+          <path d="M14 6 h4 a7 7 0 0 1 7 7 v6 a7 7 0 0 1 -7 7 h-4 a7 7 0 0 1 -7 -7 v-6 a7 7 0 0 1 7 -7 Z
+                   M3.5 8 a2.5 2.5 0 0 1 2.5 2.5 v9 a2.5 2.5 0 0 1 -5 0 v-9 a2.5 2.5 0 0 1 2.5 -2.5 Z
+                   M28.5 8 a2.5 2.5 0 0 1 2.5 2.5 v9 a2.5 2.5 0 0 1 -5 0 v-9 a2.5 2.5 0 0 1 2.5 -2.5 Z
+                   M12.8 13.2 a1.6 1.6 0 1 0 0.01 0 Z M19.2 13.2 a1.6 1.6 0 1 0 0.01 0 Z M16 22 L13.4 19 L18.6 19 Z"/>
+        </svg>
+        <p class="h1">TabeDog</p>
+      </div>
+      <button class="icon" id="filterBtn" aria-label="Filters" title="Filters">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>
+        <i class="badge" id="filterBadge" hidden></i>
+      </button>
+      <button class="icon" id="sortBtn" aria-label="Sort" title="Sort">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+      </button>
+    </div>
+    <p class="sub" id="count">Finding you…</p>
+    <div class="progress"><i></i></div>
+  </div>
+  <div class="panel" id="filterPanel" hidden>
+    <p class="sub">Payment</p>
+    <div class="row" data-group="pay" data-multi>
+      <button class="chip" data-v="card">Card</button><button class="chip" data-v="qr">QR code</button><button class="chip" data-v="emoney">E-money</button>
+    </div>
+    <p class="sub">Price per person</p>
+    <div class="row" data-group="price">
+      <button class="chip on" data-v="">Any</button><button class="chip" data-v="0-1">Under ¥1k</button><button class="chip" data-v="1-3">¥1–3k</button><button class="chip" data-v="3-6">¥3–6k</button><button class="chip" data-v="6-8">¥6–10k</button><button class="chip" data-v="8-0">¥10k+</button>
+      <div class="seg" data-group="meal"><button class="on" data-v="dinner">Dinner</button><button data-v="lunch">Lunch</button></div>
+    </div>
+    <p class="sub">Minimum rating</p>
+    <div class="row" data-group="minRating">
+      <button class="chip on" data-v="">Any</button><button class="chip" data-v="3">3.0+</button><button class="chip" data-v="3.5">3.5+</button><button class="chip" data-v="4">4.0+</button>
+    </div>
+    <p class="sub">Hours</p>
+    <div class="row" data-group="open" data-multi><button class="chip" data-v="1"><span class="dot ok"></span>Open now</button></div>
+    <div class="foot"><button class="link" id="resetFilters">Reset filters</button></div>
+  </div>
+  <div class="panel" id="sortPanel" hidden>
+    <button class="opt" data-v="distance"><i></i>Nearest first</button>
+    <button class="opt" data-v="rating"><i></i>Highest rated</button>
+    <button class="opt" data-v="reviews"><i></i>Most reviewed</button>
+  </div>
+  <div id="list"></div>
+</aside>
+
+<div id="ctl" class="float">
+  <button id="zin" aria-label="Zoom in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="zout" aria-label="Zoom out"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+</div>
+<button id="recenter" class="float" title="Back to me"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="8"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg></button>
+
+<div id="dock">
+  <div id="areaBar" class="float">
+    <button id="areaBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span>Search this area</span></button>
+    <div class="bar"><i></i></div>
+  </div>
+  <div id="search" class="float">
+    <form id="searchForm" autocomplete="off">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="What do you feel like? Ramen, sushi, cafe…" enterkeyhint="search" />
+      <button id="clearQ" type="button" aria-label="Clear" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </form>
+    <div id="suggest" class="float" hidden></div>
+  </div>
+</div>
+<div id="ctx" class="float" hidden><button id="ctxSet">Set my location here</button></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const el = { q: $("#q"), clearQ: $("#clearQ"), suggest: $("#suggest"), list: $("#list"), count: $("#count"), toolbar: $("#toolbar"),
+  filterBtn: $("#filterBtn"), sortBtn: $("#sortBtn"), filterPanel: $("#filterPanel"), sortPanel: $("#sortPanel"), filterBadge: $("#filterBadge"),
+  areaBar: $("#areaBar"), areaBtn: $("#areaBtn"), recenter: $("#recenter"), ctx: $("#ctx") };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const RANGE_M = { F: 300, G: 500, A: 800, B: 1000, C: 3000, D: 5000, E: 10000 };
+const fmtDist = (m) => m == null ? "" : m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+const fmtPrice = (s) => { if (!s) return ""; const n = s.match(/[\d,]+/g) || []; if (s.startsWith("-")) return `under ¥${(+n[0].replace(/,/g, "") + 1).toLocaleString()}`; return n.length === 2 ? `¥${n[0]}–${n[1]}` : `¥${n[0]}+`; };
+function haversine(a, b) {
+  const R = 6371000, toR = (d) => d * Math.PI / 180;
+  const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+// ---------- state ----------
+const state = { q: "", sort: "distance", pay: [], price: "", meal: "dinner", minRating: "", open: false, range: "A", center: null, page: 1 };
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  state.q = p.get("q") || "";
+  if (["distance", "rating", "reviews"].includes(p.get("sort"))) state.sort = p.get("sort");
+  state.pay = (p.get("pay") || "").split(",").filter((v) => ["card", "qr", "emoney"].includes(v));
+  if (/^\d+-\d+$/.test(p.get("price") || "")) state.price = p.get("price");
+  if (p.get("meal") === "lunch") state.meal = "lunch";
+  if (["3", "3.5", "4"].includes(p.get("min"))) state.minRating = p.get("min");
+  state.open = p.get("open") === "1";
+  if (RANGE_M[p.get("range")]) state.range = p.get("range");
+  const clat = parseFloat(p.get("clat")), clng = parseFloat(p.get("clng"));
+  state.center = Number.isFinite(clat) && Number.isFinite(clng) ? { lat: clat, lng: clng } : null;
+}
+function writeHash() {
+  const p = new URLSearchParams();
+  if (state.q) p.set("q", state.q);
+  if (state.sort !== "distance") p.set("sort", state.sort);
+  if (state.pay.length) p.set("pay", state.pay.join(","));
+  if (state.price) { p.set("price", state.price); if (state.meal === "lunch") p.set("meal", "lunch"); }
+  if (state.minRating) p.set("min", state.minRating);
+  if (state.open) p.set("open", "1");
+  if (state.range !== "A") p.set("range", state.range);
+  if (state.center) { p.set("clat", state.center.lat.toFixed(6)); p.set("clng", state.center.lng.toFixed(6)); }
+  history.replaceState(null, "", p.size ? "#" + p : location.pathname);
+}
+
+// ---------- map ----------
+const map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron", center: [138.25, 36.2], zoom: 4.3, attributionControl: { compact: true } });
+$("#zin").onclick = () => map.zoomIn();
+$("#zout").onclick = () => map.zoomOut();
+const markers = {};
+let openPopup = null;
+function closePopup() { if (openPopup) { openPopup.remove(); openPopup = null; } }
+function circleGeo(lat, lng, radiusM, n = 64) {
+  const coords = [];
+  for (let i = 0; i <= n; i++) { const a = (i / n) * 2 * Math.PI; coords.push([lng + (radiusM * Math.cos(a)) / (111320 * Math.cos(lat * Math.PI / 180)), lat + (radiusM * Math.sin(a)) / 110540]); }
+  return { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] } };
+}
+map.once("load", () => {
+  map.addSource("search-area", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "search-area-line", type: "line", source: "search-area", paint: { "line-color": "#ff6347", "line-width": 1.5, "line-dasharray": [3, 3], "line-opacity": .6 } });
+});
+function setSearchArea(c) { const s = map.getSource("search-area"); if (s) s.setData({ type: "FeatureCollection", features: c ? [circleGeo(c.lat, c.lng, c.radiusM)] : [] }); }
+// the floating sidebar and the bottom dock cover part of the map; keep results out from under them
+const wide = () => innerWidth > 800;
+function fitPadding() { return wide() ? { left: 380 + 48, top: 60, right: 80, bottom: 110 } : { left: 30, top: 70, right: 30, bottom: innerHeight * 0.44 + 90 }; }
+function viewOffset() { return wide() ? [(380 + 16) / 2, 0] : [0, -innerHeight * 0.22]; }
+function visualCenter() { const p = map.project(map.getCenter()), o = viewOffset(); return map.unproject([p.x + o[0], p.y + o[1]]); }
+
+// ---------- my location: cookie → GPS → IP, all automatic ----------
+const COOKIE = "tabelog_loc";
+function readLoc() {
+  const m = document.cookie.match(new RegExp("(?:^|; )" + COOKIE + "=([^;]*)"));
+  if (!m) return null;
+  try { const c = JSON.parse(decodeURIComponent(m[1])); return Number.isFinite(c.lat) && Number.isFinite(c.lng) ? c : null; } catch { return null; }
+}
+function writeLoc(loc) {
+  const v = encodeURIComponent(JSON.stringify({ lat: loc.lat, lng: loc.lng, acc: loc.acc ?? null, src: loc.src, at: Date.now() }));
+  document.cookie = `${COOKIE}=${v}; Max-Age=${365 * 24 * 3600}; Path=/; SameSite=Lax`;
+  renderMe();
+}
+let meMarker = null;
+function renderMe() {
+  const loc = readLoc();
+  if (meMarker) { meMarker.remove(); meMarker = null; }
+  if (!loc) return;
+  const d = document.createElement("div");
+  d.className = "person" + (String(loc.src || "").startsWith("ip") ? " coarse" : "");
+  d.title = loc.acc > 1000 ? "Roughly where you are (from your IP)" : `You are here (±${Math.round(loc.acc || 0)} m)`;
+  d.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7.5" r="4"/><path d="M4 21c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5z"/></svg>';
+  meMarker = new maplibregl.Marker({ element: d }).setLngLat([loc.lng, loc.lat]).addTo(map);
+}
+const isCoarse = (l) => !l || String(l.src || "").startsWith("ip") || (l.acc || 0) > 1000;
+function gps(opts) {
+  return new Promise((res, rej) => {
+    if (!navigator.geolocation) return rej(new Error("no geolocation"));
+    navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, src: "gps" }), rej, opts);
+  });
+}
+// keep improving a poor fix for a short while
+function refineGPS(seconds = 25) {
+  if (!navigator.geolocation) return;
+  const id = navigator.geolocation.watchPosition((p) => {
+    const cur = readLoc();
+    if (!cur || isCoarse(cur) || p.coords.accuracy < (cur.acc || 1e9) - 5) applyLocation({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, src: "gps" });
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+  setTimeout(() => navigator.geolocation.clearWatch(id), seconds * 1000);
+}
+let searchedOnce = false;
+function applyLocation(loc) {
+  const prev = readLoc();
+  writeLoc(loc);
+  const movedFar = !prev || haversine(prev, loc) > 100;
+  const upgraded = prev && isCoarse(prev) && !isCoarse(loc);
+  if (!searchedOnce || (movedFar && !state.center) || upgraded) {
+    if (upgraded || movedFar) state.center = null;
+    state.page = 1;
+    load({ fit: true });
+  }
+  if (!searchedOnce || upgraded) map.jumpTo({ center: [loc.lng, loc.lat], zoom: Math.max(map.getZoom(), 14.5), offset: viewOffset() });
+}
+async function ensureLocation() {
+  const saved = readLoc();
+  if (saved) {
+    applyLocation(saved); // search right away from the saved spot, then quietly improve it
+    if (isCoarse(saved)) gps({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }).then(applyLocation).catch(() => {}); else refineGPS(10);
+    return;
+  }
+  let gotGps = false;
+  gps({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }).then((l) => { gotGps = true; applyLocation(l); if (l.acc > 60) refineGPS(); })
+    .catch(() => { if (!readLoc()) setCount("Allow location, or right-click the map where you are."); });
+  // IP fallback kicks in immediately so results show while the GPS fix is still coming
+  try {
+    const ip = await (await fetch("/api/locate")).json();
+    if (!gotGps && !readLoc() && Number.isFinite(ip.lat)) applyLocation({ lat: ip.lat, lng: ip.lng, acc: ip.acc, src: ip.src });
+  } catch {}
+}
+// right-click / long-press the map to fix your location by hand
+function showCtx(point, lngLat) {
+  el.ctx.hidden = false;
+  el.ctx.style.left = Math.min(point.x, innerWidth - 200) + "px";
+  el.ctx.style.top = Math.min(point.y, innerHeight - 60) + "px";
+  el.ctxSetAt = lngLat;
+}
+map.on("contextmenu", (e) => { e.preventDefault(); showCtx(e.point, e.lngLat); });
+let pressTimer = null;
+map.on("touchstart", (e) => { clearTimeout(pressTimer); if (e.points.length === 1) pressTimer = setTimeout(() => showCtx(e.point, e.lngLat), 600); });
+map.on("touchmove", () => clearTimeout(pressTimer)); map.on("touchend", () => clearTimeout(pressTimer));
+$("#ctxSet").onclick = () => { el.ctx.hidden = true; const ll = el.ctxSetAt; state.center = null; searchedOnce = false; applyLocation({ lat: ll.lat, lng: ll.lng, acc: 0, src: "manual" }); };
+map.on("click", () => { el.ctx.hidden = true; });
+map.on("movestart", () => { el.ctx.hidden = true; });
+
+// ---------- "search this area" ----------
+let lastSearched = null; // { lat, lng, radiusM }
+let refCenter = null, pendingRef = false; // where the map sat when the current results were shown
+let loading = false;
+function rangeForViewport() {
+  const b = map.getBounds(), c = map.getCenter();
+  const w = haversine({ lat: c.lat, lng: b.getWest() }, { lat: c.lat, lng: b.getEast() });
+  const h = haversine({ lat: b.getSouth(), lng: c.lng }, { lat: b.getNorth(), lng: c.lng });
+  const half = Math.min(w, h) / 2;
+  let best = "F";
+  for (const [k, m] of Object.entries(RANGE_M)) if (m <= half) best = k;
+  return best;
+}
+let quietMove = false; // true while the map is panning to a result the user tapped
+map.on("movestart", (e) => { if (e.originalEvent) quietMove = false; });
+function checkMoved() {
+  if (loading || pendingRef) return;
+  const c = visualCenter(), home = readLoc();
+  let moved = false;
+  if (quietMove) moved = false;
+  else if (lastSearched) {
+    // sensitive: a quarter of the searched radius (min 60 m) from where the results were shown, or zoomed out past what was searched
+    moved = haversine(refCenter || lastSearched, c) > Math.max(lastSearched.radiusM * 0.25, 60) || RANGE_M[rangeForViewport()] > lastSearched.radiusM * 1.5;
+  } else if (home) moved = haversine(home, c) > 150;
+  el.areaBar.classList.toggle("show", moved && map.getZoom() >= 10);
+  el.recenter.classList.toggle("show", !!home && haversine(home, c) > 120);
+}
+map.on("moveend", checkMoved); map.on("zoomend", checkMoved);
+el.areaBtn.onclick = () => { const c = map.getCenter(); state.center = { lat: c.lat, lng: c.lng }; state.range = rangeForViewport(); state.page = 1; load({ keepView: true }); };
+el.recenter.onclick = () => {
+  const home = readLoc(); if (!home) return;
+  map.flyTo({ center: [home.lng, home.lat], zoom: Math.max(map.getZoom(), 14.5), duration: 600 });
+  if (state.center) { state.center = null; state.range = "A"; state.page = 1; load({ keepView: true }); }
+  if (isCoarse(home)) gps({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }).then(applyLocation).catch(() => {});
+};
+function setLoading(on) {
+  loading = on;
+  el.toolbar.classList.toggle("loading", on);
+  el.areaBar.classList.toggle("loading", on);
+  el.areaBtn.disabled = on;
+  el.areaBtn.querySelector("span").textContent = on ? "Searching…" : "Search this area";
+  if (!on) checkMoved();
+}
+
+// ---------- render ----------
+let items = [];
+function card(r, i) {
+  const c = document.createElement("article");
+  c.className = "card"; c.dataset.id = r.id;
+  const price = fmtPrice(state.meal === "lunch" ? r.lunch || r.dinner : r.dinner || r.lunch);
+  c.innerHTML = `${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy">` : '<div class="noimg"></div>'}
+    <div>
+      <h2><span class="n">${i + 1}</span><span>${esc(r.name)}</span></h2>
+      <p class="p1"><span class="star">★ ${r.rating ?? "–"}</span> · ${r.reviews.toLocaleString()} reviews${r.distM != null ? ` · ${fmtDist(r.distM)}` : ""}</p>
+      <p class="p2">${r.open === true ? '<span class="dot ok"></span>Open' : r.open === false ? '<span class="dot no"></span>Closed' : ""}${r.open != null ? " · " : ""}${esc(r.genre)}${price ? " · " + price : ""}</p>
+    </div>`;
+  c.onclick = () => highlight(r.id, true);
+  return c;
+}
+function popupHtml(r, i) {
+  const price = fmtPrice(state.meal === "lunch" ? r.lunch || r.dinner : r.dinner || r.lunch);
+  return `<div class="popup"><h2>${i + 1}. ${esc(r.name)}</h2>
+    <p class="p1"><span class="star">★ ${r.rating ?? "–"}</span> · ${r.reviews.toLocaleString()} reviews${r.distM != null ? ` · ${fmtDist(r.distM)}` : ""}</p>
+    <p class="p2">${r.open === true ? "Open now · " : r.open === false ? "Closed now · " : ""}${esc(r.genre)}${price ? " · " + price : ""}</p>
+    <a href="${esc(r.url)}" target="_blank" rel="noopener">Open on Tabelog ↗</a></div>`;
+}
+function render(data, opts) {
+  if (!opts.append) { closePopup(); for (const k in markers) { markers[k].remove(); delete markers[k]; } el.list.innerHTML = ""; items = []; }
+  const start = items.length;
+  items = items.concat(data.items);
+  const frag = document.createDocumentFragment();
+  data.items.forEach((r, j) => {
+    const i = start + j;
+    frag.appendChild(card(r, i));
+    if (r.lat == null) return;
+    const pin = document.createElement("div"); pin.className = "pin"; pin.innerHTML = `<span>${i + 1}</span>`;
+    const m = new maplibregl.Marker({ element: pin, anchor: "bottom", offset: [0, 2] }).setLngLat([r.lng, r.lat]).addTo(map);
+    m.popupHtml = popupHtml(r, i);
+    pin.addEventListener("click", (e) => { e.stopPropagation(); highlight(r.id, false); });
+    markers[r.id] = m;
+  });
+  el.list.appendChild(frag);
+  const s = document.createElement("div"); s.id = "sentinel"; el.list.appendChild(s); observer.observe(s);
+  if (!items.length) { el.list.innerHTML = `<div class="empty"><h2>Nothing here</h2><p class="p2">Try fewer filters, or search a wider area.</p></div>`; return; }
+  if (opts.append) return;
+  const bounds = new maplibregl.LngLatBounds();
+  items.forEach((r) => { if (r.lat != null) bounds.extend([r.lng, r.lat]); });
+  const origin = state.center || readLoc();
+  if (origin) bounds.extend([origin.lng, origin.lat]);
+  if (bounds.isEmpty()) return;
+  const view = map.getBounds();
+  const anyVisible = items.some((r) => r.lat != null && view.contains([r.lng, r.lat]));
+  if (opts.fit || !opts.keepView || !anyVisible) map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 16, duration: 600 });
+}
+function highlight(id, pan) {
+  el.list.querySelectorAll(".card.active").forEach((c) => c.classList.remove("active"));
+  document.querySelectorAll(".pin.active").forEach((p) => p.classList.remove("active"));
+  const c = el.list.querySelector(`.card[data-id="${id}"]`);
+  c?.classList.add("active"); c?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const m = markers[id]; if (!m) return;
+  m.getElement().classList.add("active");
+  closePopup();
+  openPopup = new maplibregl.Popup({ offset: 30, maxWidth: "280px" }).setHTML(m.popupHtml).setLngLat(m.getLngLat()).addTo(map);
+  openPopup.on("close", () => { openPopup = null; m.getElement().classList.remove("active"); });
+  if (pan) { quietMove = true; map.flyTo({ center: m.getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 500, offset: viewOffset() }); }
+}
+const observer = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && hasMore && !loading) { state.page++; load({ append: true, keepView: true }); } }, { root: el.list, rootMargin: "400px" });
+
+// ---------- load ----------
+let reqId = 0, hasMore = false, lastData = null;
+function setCount(t) { el.count.textContent = t; }
+function describe(data) {
+  const n = items.length + (hasMore ? "+" : "");
+  const where = state.center ? "around here" : "around you";
+  if (!data.genre.matched && state.q) return `No “${state.q}” category · showing all restaurants ${where}`;
+  if (data.widened) return `Nothing within ${fmtDist(data.radiusM)} · showing the nearest ${data.genre.label.toLowerCase()}`;
+  return `${n} ${data.genre.code === "RC" ? "places" : data.genre.label.toLowerCase()} within ${fmtDist(data.radiusM)} ${where}`;
+}
+async function load(opts = {}) {
+  const origin = state.center || readLoc();
+  if (!origin) return;
+  const my = ++reqId;
+  searchedOnce = true;
+  writeHash(); syncUI();
+  if (!opts.append) { setCount("Searching Tabelog…"); }
+  setLoading(true);
+  try {
+    const p = new URLSearchParams({ lat: origin.lat, lon: origin.lng, range: state.range, sort: state.sort, page: state.page });
+    if (state.q) p.set("q", state.q);
+    if (state.pay.length) p.set("pay", state.pay.join(","));
+    if (state.price) { const [a, b] = state.price.split("-"); p.set("pmin", a); p.set("pmax", b); p.set("meal", state.meal); }
+    if (state.minRating) p.set("minRating", state.minRating);
+    if (state.open) p.set("open", "1");
+    const data = await (await fetch("/api/search?" + p)).json();
+    if (my !== reqId) return;
+    if (data.error) throw new Error(data.error);
+    hasMore = !!data.hasMore; lastData = data;
+    render(data, opts);
+    lastSearched = { lat: data.origin.lat, lng: data.origin.lng, radiusM: data.radiusM }; quietMove = false;
+    if (!opts.append) { // reference = where the map settles after showing these results
+      const setRef = () => { refCenter = visualCenter(); pendingRef = false; checkMoved(); };
+      if (map.isMoving()) { pendingRef = true; map.once("moveend", setRef); } else setRef();
+    }
+    setSearchArea(state.center ? lastSearched : null);
+    setCount(describe(data));
+  } catch (e) {
+    if (my !== reqId) return;
+    setCount("Tabelog didn’t answer. Try again.");
+    hasMore = false;
+  } finally { if (my === reqId) setLoading(false); }
+}
+function restart(opts = {}) { state.page = 1; load({ keepView: true, ...opts }); }
+
+// ---------- search bar + suggestions ----------
+let genres = [];
+fetch("/api/genres").then((r) => r.json()).then((g) => { genres = g; }).catch(() => {});
+let selIdx = -1;
+function showSuggest() {
+  const s = el.q.value.trim().toLowerCase();
+  const hits = s ? genres.filter((g) => g.label.toLowerCase().includes(s) || g.code.includes(s)).slice(0, 6) : [];
+  el.suggest.hidden = !hits.length; selIdx = -1;
+  el.suggest.innerHTML = hits.map((g) => `<div class="p1" data-v="${esc(g.label)}">${esc(g.label)}</div>`).join("");
+}
+el.q.oninput = () => { el.clearQ.hidden = !el.q.value; showSuggest(); };
+el.q.onkeydown = (e) => {
+  const opts = [...el.suggest.children];
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); selIdx = (selIdx + (e.key === "ArrowDown" ? 1 : -1) + opts.length) % opts.length; opts.forEach((o, i) => o.classList.toggle("sel", i === selIdx)); }
+  if (e.key === "Escape") { el.suggest.hidden = true; el.q.blur(); }
+  if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); el.q.value = opts[selIdx].dataset.v; submit(); }
+};
+el.suggest.onmousedown = (e) => { const d = e.target.closest("[data-v]"); if (d) { el.q.value = d.dataset.v; submit(); } };
+el.q.onblur = () => setTimeout(() => { el.suggest.hidden = true; }, 120);
+function submit() { el.suggest.hidden = true; el.q.blur(); state.q = el.q.value.trim(); el.clearQ.hidden = !state.q; restart(); }
+$("#searchForm").onsubmit = (e) => { e.preventDefault(); submit(); };
+el.clearQ.onclick = () => { el.q.value = ""; submit(); };
+
+// ---------- filters / sort ----------
+function togglePanel(which) {
+  const open = which === "filter" ? el.filterPanel.hidden : el.sortPanel.hidden;
+  el.filterPanel.hidden = !(which === "filter" && open); el.sortPanel.hidden = !(which === "sort" && open);
+  el.filterBtn.classList.toggle("open", !el.filterPanel.hidden); el.sortBtn.classList.toggle("open", !el.sortPanel.hidden);
+}
+el.filterBtn.onclick = () => togglePanel("filter");
+el.sortBtn.onclick = () => togglePanel("sort");
+document.addEventListener("click", (e) => { if (!e.target.closest(".panel, .icon")) { el.filterPanel.hidden = el.sortPanel.hidden = true; el.filterBtn.classList.remove("open"); el.sortBtn.classList.remove("open"); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { el.filterPanel.hidden = el.sortPanel.hidden = true; el.filterBtn.classList.remove("open"); el.sortBtn.classList.remove("open"); } });
+el.filterPanel.onclick = (e) => {
+  const b = e.target.closest("button[data-v]"); if (!b) return;
+  const g = b.parentElement.dataset.group, v = b.dataset.v;
+  if (g === "pay") state.pay = state.pay.includes(v) ? state.pay.filter((x) => x !== v) : [...state.pay, v];
+  else if (g === "open") state.open = !state.open;
+  else if (g === "meal") state.meal = v;
+  else if (g === "price") state.price = v;
+  else if (g === "minRating") state.minRating = v;
+  restart();
+};
+$("#resetFilters").onclick = () => { Object.assign(state, { pay: [], price: "", meal: "dinner", minRating: "", open: false }); restart(); };
+el.sortPanel.onclick = (e) => { const b = e.target.closest(".opt"); if (!b) return; state.sort = b.dataset.v; togglePanel("sort"); restart(); };
+function syncUI() {
+  el.q.value = state.q; el.clearQ.hidden = !state.q;
+  for (const b of el.filterPanel.querySelectorAll("[data-group=pay] .chip")) b.classList.toggle("on", state.pay.includes(b.dataset.v));
+  for (const b of el.filterPanel.querySelectorAll("[data-group=price] .chip")) b.classList.toggle("on", b.dataset.v === state.price);
+  for (const b of el.filterPanel.querySelectorAll("[data-group=meal] button")) b.classList.toggle("on", b.dataset.v === state.meal);
+  for (const b of el.filterPanel.querySelectorAll("[data-group=minRating] .chip")) b.classList.toggle("on", b.dataset.v === state.minRating);
+  el.filterPanel.querySelector("[data-group=open] .chip").classList.toggle("on", state.open);
+  for (const b of el.sortPanel.querySelectorAll(".opt")) b.classList.toggle("on", b.dataset.v === state.sort);
+  const n = state.pay.length + (state.price ? 1 : 0) + (state.minRating ? 1 : 0) + (state.open ? 1 : 0);
+  el.filterBadge.hidden = !n; el.filterBadge.textContent = n;
+}
+
+// ---------- boot ----------
+readHash(); syncUI();
+if (state.center) { map.jumpTo({ center: [state.center.lng, state.center.lat], zoom: 14.5, offset: viewOffset() }); renderMe(); load({ keepView: true }); }
+map.once("load", () => { renderMe(); });
+ensureLocation();
+</script>
+</body>
+</html>
