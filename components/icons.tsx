@@ -43,3 +43,21 @@ export const QrIcon = () => <S strokeWidth={2}><rect x="3.5" y="3.5" width="7" h
 // used as innerHTML for the imperative MapLibre "you are here" marker
 export const PERSON_SVG =
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7.5" r="4"/><path d="M4 21c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5z"/></svg>';
+
+// premium
+export const SparkIcon = ({ size = 14 }: { size?: number }) => <S size={size} strokeWidth={2}><path d="M12 3l2.1 5.9L20 11l-5.9 2.1L12 19l-2.1-5.9L4 11l5.9-2.1z" fill="currentColor" stroke="none" /><path d="M19 3v4M17 5h4" /></S>;
+
+// lists
+export const PlusIcon = ({ size = 16 }: { size?: number }) => <S size={size} strokeWidth={2.4}><path d="M12 5v14M5 12h14" /></S>;
+export const CheckIcon = ({ size = 14 }: { size?: number }) => <S size={size} strokeWidth={3}><path d="m5 12.5 4.5 4.5L19 7.5" /></S>;
+export const PencilIcon = ({ size = 15 }: { size?: number }) => <S size={size} strokeWidth={2}><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z" /><path d="m13.5 7.5 3 3" /></S>;
+export const TrashIcon = ({ size = 15 }: { size?: number }) => <S size={size} strokeWidth={2}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></S>;
+export const ListPlusIcon = ({ size = 18 }: { size?: number }) => <S size={size} strokeWidth={2.2}><path d="M4 6h12M4 12h12M4 18h7M18 14v6M15 17h6" /></S>;
+export const ListIcon = ({ size = 16 }: { size?: number }) => <S size={size} strokeWidth={2.2}><path d="M4 6h16M4 12h16M4 18h10" /></S>;
+export const ChevronDown = ({ size = 16 }: { size?: number }) => <S size={size} strokeWidth={2.4}><path d="m6 9 6 6 6-6" /></S>;
+// used as innerHTML for the imperative MapLibre list pins
+export const HEART_SVG =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>';
+// top-3 medal pins (colours live in CSS as .pin.medal-N; this is for labels and typing)
+export const MEDAL = { 1: "Gold", 2: "Silver", 3: "Bronze" } as const;
+export type MedalRank = keyof typeof MEDAL;

@@ -29,7 +29,7 @@ export type Restaurant = {
 
 export type Genre = { code: string; label: string; matched: boolean };
 
-export type SortKey = "distance" | "rating" | "reviews";
+export type SortKey = "distance" | "rating" | "reviews" | "price_asc" | "price_desc";
 
 export type SearchResponse = {
   fetchedAt: string;
@@ -45,3 +45,22 @@ export type SearchResponse = {
 };
 
 export type LocateResponse = { lat: number; lng: number; acc: number; src: string; city: string; country: string };
+
+export type Review = {
+  id: string;
+  url: string;               // the review on Tabelog
+  title: string;
+  text: string;
+  full: boolean;             // false = Tabelog's ~100-char excerpt; the link has the rest
+  rating: number | null;
+  meal: "dinner" | "lunch" | null;
+  amount: string;            // "JPY 6,000～JPY 7,999" per person, or ""
+  visited: string;           // "September, 2026"
+  visits: string;            // "1 time"
+  reviewer: string;
+  reviewerUrl: string;
+  avatar: string | null;
+  photos: string[];
+};
+
+export type ReviewsResponse = { url: string; items: Review[] };

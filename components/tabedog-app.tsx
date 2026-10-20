@@ -7,14 +7,17 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { RANGES } from "@/lib/genres";
 import { haversine } from "@/lib/geo";
-import { fmtDist } from "@/lib/format";
+import { fmtDist, priceYenOf } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
-import { addFavorite, listFavorites, removeFavorite } from "@/lib/favorites";
+import { addToList, colorHex, createList, deleteList, loadLists, removeFromList, updateList, type SavedList } from "@/lib/lists";
+import { can, type Plan } from "@/lib/plan";
 import type { Genre, LocateResponse, Restaurant, SearchResponse, SortKey } from "@/lib/types";
 import { RestaurantCard } from "./restaurant-card";
+import { ListsPanel, type ListDraft } from "./lists";
+import { ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, UpgradePrompt } from "./upgrade";
 import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
-import { FilterIcon, HeartIcon, Logo, PERSON_SVG, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
+import { FilterIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
 
 type Loc = { lat: number; lng: number; acc?: number | null; src?: string; at?: number };
 type Center = { lat: number; lng: number };
@@ -22,7 +25,15 @@ type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean };
 type Panel = "filter" | "sort" | "account" | null;
 
 const COOKIE = "tabelog_loc";
-const SORTS: SortKey[] = ["distance", "rating", "reviews"];
+const BILLING_NOTES: Record<string, string> = {
+  success: "Welcome to Premium! Your lists are ready.",
+  pending: "Payment received. Premium switches on in a moment; reload if you don’t see it.",
+  cancel: "Checkout cancelled. You’re still on the free plan.",
+  error: "Something went wrong talking to Stripe. Please try again.",
+  unconfigured: "Billing isn’t set up on this server yet.",
+  nocustomer: "No subscription found for this account.",
+};
+const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 
 // ---------- my location cookie ----------
@@ -80,7 +91,8 @@ function circleGeo(lat: number, lng: number, radiusM: number, n = 64): GeoJSON.F
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coords] } };
 }
 
-export default function TabeDogApp({ email, userId }: { email: string; userId: string }) {
+export default function TabeDogApp({ email, userId, plan, billing }: { email: string; userId: string; plan: Plan; billing: boolean }) {
+  const hasLists = can(plan, "lists"); // saving lists is a premium feature; free users get an upgrade prompt instead
   const mapEl = useRef<HTMLDivElement>(null);
   const listEl = useRef<HTMLDivElement>(null);
   const qEl = useRef<HTMLInputElement>(null);
@@ -90,6 +102,7 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
   const E = useRef({
     map: null as MLMap | null,
     markers: {} as Record<string, Marker>,
+    listMarkers: {} as Record<string, Marker>, // pins for saved places that aren't in the current results
     me: null as Marker | null,
     filters: DEFAULT_FILTERS as Filters,
     center: null as Center | null,
@@ -123,9 +136,13 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
   const [q, setQ] = useState("");
   const [suggest, setSuggest] = useState<Genre[]>([]);
   const [selIdx, setSelIdx] = useState(-1);
-  const [favorites, setFavorites] = useState<Restaurant[]>([]);
-  const [favNote, setFavNote] = useState<string | null>(null);
-  const [showSaved, setShowSaved] = useState(false);
+  const [lists, setLists] = useState<SavedList[]>([]);
+  const [listsNote, setListsNote] = useState<string | null>(null);
+  const [viewList, setViewList] = useState<string | null>(null); // list shown in the sidebar instead of results
+  const [showLists, setShowLists] = useState(false);              // the popover by the search bar
+  const [upsell, setUpsell] = useState(false);                    // the "Premium feature" prompt for free users
+  const [billingNote, setBillingNote] = useState<string | null>(null); // what happened when we came back from Stripe
+  const closeUpsell = useCallback(() => setUpsell(false), []);
 
   const setFilters = (f: Filters) => { E.filters = f; setFiltersState(f); };
   const setCenter = (c: Center | null) => { E.center = c; };
@@ -201,6 +218,7 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
   function openSaved(r: Restaurant) {
     document.querySelectorAll(".pin.active").forEach((p) => p.classList.remove("active"));
     openDetail(r);
+    (E.markers[r.id] || E.listMarkers[r.id])?.getElement().classList.add("active");
     const map = E.map; if (!map || r.lat == null || r.lng == null) return;
     E.quietMove = true;
     map.flyTo({ center: [r.lng, r.lat], zoom: Math.max(map.getZoom(), 15), duration: 500, offset: viewOffset() });
@@ -321,18 +339,74 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
     } catch { /* GPS or a manual pin will do */ }
   }
 
-  // ---------- saved places (Supabase `favorites`, scoped by RLS) ----------
-  const isSaved = (id: string) => favorites.some((f) => f.id === id);
-  async function toggleFavorite(r: Restaurant) {
-    setFavNote(null);
-    const was = isSaved(r.id);
-    setFavorites((fs) => (was ? fs.filter((f) => f.id !== r.id) : [r, ...fs]));
-    try { if (was) await removeFavorite(supabase, r.id); else await addFavorite(supabase, userId, r); }
-    catch (e) {
-      setFavNote(`Couldn’t ${was ? "remove" : "save"}: ${(e as Error).message}`);
-      listFavorites(supabase).then(setFavorites).catch(() => {});
-    }
+  // ---------- lists (Supabase `lists` + `list_items`, scoped by RLS) ----------
+  // Every change is applied optimistically, then written; on failure the server copy is reloaded.
+  const reloadLists = () => { if (hasLists) loadLists(supabase, userId).then(setLists).catch((e) => setListsNote(`Couldn’t load lists: ${(e as Error).message}`)); };
+  const patchList = (id: string, fn: (l: SavedList) => SavedList) => setLists((ls) => ls.map((l) => (l.id === id ? fn(l) : l)));
+  async function attempt(what: string, fn: () => Promise<unknown>) {
+    setListsNote(null);
+    try { await fn(); } catch (e) { setListsNote(`Couldn’t ${what}: ${(e as Error).message}`); reloadLists(); }
   }
+  function toggleInList(l: SavedList, r: Restaurant) {
+    const was = l.items.some((x) => x.id === r.id);
+    patchList(l.id, (x) => ({ ...x, items: was ? x.items.filter((i) => i.id !== r.id) : [r, ...x.items] }));
+    attempt(was ? `remove from ${l.name}` : `add to ${l.name}`, () => (was ? removeFromList(supabase, l.id, r.id) : addToList(supabase, userId, l.id, r)));
+  }
+  function editList(l: SavedList, d: ListDraft) {
+    patchList(l.id, (x) => ({ ...x, ...d }));
+    attempt("save list", () => updateList(supabase, l.id, d));
+  }
+  function removeList(l: SavedList) {
+    if (l.isMain) return;
+    setLists((ls) => ls.filter((x) => x.id !== l.id));
+    if (viewList === l.id) setViewList(null);
+    attempt("delete list", () => deleteList(supabase, l.id));
+  }
+  /** New list; with `r` the place goes straight into it (the "create & add" path from the detail panel). */
+  function newList(d: ListDraft, r?: Restaurant) {
+    attempt("create list", async () => {
+      const l = await createList(supabase, userId, d.name, d.color, lists.length);
+      if (r) { await addToList(supabase, userId, l.id, r); l.items = [r]; }
+      setLists((ls) => [...ls, l]);
+    });
+  }
+  const openList = (l: SavedList) => { setViewList((v) => (v === l.id ? null : l.id)); setShowLists(false); };
+  const colorsOf = (id: string) => lists.filter((l) => l.items.some((x) => x.id === id)).map((l) => colorHex(l.color));
+
+  // The map shows either the search results or one open list, never both. Lists stay off the map until opened.
+  useEffect(() => {
+    const map = E.map; if (!map) return;
+    const open = viewList ? lists.find((l) => l.id === viewList) : null;
+    const want = new Map<string, { color: string; r: Restaurant }>();
+    if (open) for (const r of open.items) want.set(r.id, { color: colorHex(open.color), r });
+    for (const m of Object.values(E.markers)) m.getElement().style.display = open ? "none" : "";
+    for (const [id, m] of Object.entries(E.listMarkers)) {
+      const w = want.get(id);
+      if (!w || m.getElement().dataset.color !== w.color) { m.remove(); delete E.listMarkers[id]; }
+    }
+    for (const [id, { color, r }] of want) {
+      if (E.listMarkers[id] || r.lat == null || r.lng == null) continue;
+      const pin = document.createElement("div");
+      pin.className = "pin saved"; pin.dataset.color = color; pin.style.setProperty("--pin", color); pin.innerHTML = `<span>${HEART_SVG}</span>`;
+      pin.title = r.name;
+      pin.addEventListener("click", (e) => { e.stopPropagation(); openSaved(r); });
+      E.listMarkers[id] = new maplibregl.Marker({ element: pin, anchor: "bottom", offset: [0, 2] }).setLngLat([r.lng, r.lat]).addTo(map);
+    }
+    if (map.getLayer("search-area-line")) map.setLayoutProperty("search-area-line", "visibility", open ? "none" : "visible");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lists, items, viewList]);
+
+  // opening a list frames its places
+  useEffect(() => {
+    const map = E.map, l = viewList ? lists.find((x) => x.id === viewList) : null;
+    if (!map || !l) return;
+    const bounds = new maplibregl.LngLatBounds();
+    l.items.forEach((r) => { if (r.lat != null && r.lng != null) bounds.extend([r.lng, r.lat]); });
+    if (bounds.isEmpty()) return;
+    E.quietMove = true; closeDetail();
+    map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 15, duration: 600 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewList]);
 
   // ---------- boot: map, events, hash, location ----------
   useEffect(() => {
@@ -372,22 +446,35 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
     }, { root: listEl.current, rootMargin: "400px" });
 
     fetch("/api/genres").then((r) => r.json()).then((g: Genre[]) => { E.genres = g; }).catch(() => {});
-    listFavorites(supabase).then(setFavorites).catch((e) => setFavNote(`Couldn’t load saved places: ${(e as Error).message}`));
+    reloadLists();
+
+    // back from Stripe Checkout / the portal: say what happened, then drop the query so a reload doesn't repeat it
+    const billingParam = new URLSearchParams(location.search).get("billing");
+    if (billingParam) {
+      setBillingNote(BILLING_NOTES[billingParam] ?? null);
+      if (billingParam === "success" || billingParam === "pending") setPanel("account");
+      history.replaceState(null, "", location.pathname + location.hash);
+    }
 
     const { filters: f, center } = readHash();
     setFilters(f); setCenter(center); setQ(f.q);
     if (center) { map.easeTo({ center: [center.lng, center.lat], zoom: 14.5, offset: viewOffset(), duration: 0 }); renderMe(); load({ keepView: true }); }
     ensureLocation();
 
-    const onDocClick = (e: MouseEvent) => { if (!(e.target as Element).closest(".panel, .icon")) setPanel(null); };
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") { setPanel(null); closeDetail(); } };
+    // composedPath() still holds elements React has already swapped out by the time this runs
+    const onDocClick = (e: MouseEvent) => {
+      const path = e.composedPath().filter((n): n is Element => n instanceof Element);
+      if (!path.some((el) => el.matches(".panel, .icon"))) setPanel(null);
+      if (!path.some((el) => el.id === "listsWrap")) setShowLists(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") { setPanel(null); setShowLists(false); closeDetail(); } };
     document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onKey);
       E.observer?.disconnect(); E.observer = null;
-      map.remove(); E.map = null; E.markers = {}; E.me = null;
+      map.remove(); E.map = null; E.markers = {}; E.listMarkers = {}; E.me = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -439,7 +526,29 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
   };
 
   const nFilters = activeFilterCount(filters);
-  const listItems = showSaved ? favorites : items;
+  const viewing = viewList ? lists.find((l) => l.id === viewList) ?? null : null;
+  const listItems = viewing ? viewing.items : items;
+  // gold / silver / bronze pins for the best three loaded results under the current sort
+  const medals = useMemo(() => {
+    const key: Record<SortKey, (r: Restaurant) => number> = {
+      distance: (r) => r.distM ?? Infinity, rating: (r) => -(r.rating ?? -Infinity), reviews: (r) => -(r.reviews ?? 0),
+      price_asc: (r) => priceYenOf(r, filters.meal) ?? Infinity, price_desc: (r) => -(priceYenOf(r, filters.meal) ?? -Infinity),
+    };
+    const ranked = items.filter((r) => Number.isFinite(key[filters.sort](r))).sort((a, b) => key[filters.sort](a) - key[filters.sort](b)).slice(0, 3);
+    return new Map(ranked.map((r, i) => [r.id, (i + 1) as MedalRank]));
+  }, [items, filters.sort, filters.meal]);
+  useEffect(() => {
+    const why = { distance: "Nearest", rating: "Highest rated", reviews: "Most reviewed", price_asc: "Cheapest", price_desc: "Priciest" }[filters.sort];
+    for (const [id, m] of Object.entries(E.markers)) {
+      const el = m.getElement(), rank = medals.get(id);
+      el.classList.remove("medal-1", "medal-2", "medal-3");
+      el.title = "";
+      if (!rank) continue;
+      el.classList.add(`medal-${rank}`);
+      el.title = `${MEDAL[rank]} · ${why} #${rank}`;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [medals]);
 
   return (
     <div className={"app" + (detail ? " has-detail" : "")}>
@@ -449,10 +558,6 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
         <div id="toolbar" className={loading ? "loading" : ""}>
           <div className="row">
             <div className="brand"><Logo /><p className="h1">TabeDog</p></div>
-            <button type="button" className={"icon" + (showSaved ? " on" : "")} aria-label="Saved places" aria-pressed={showSaved} title="Saved places" onClick={() => setShowSaved((v) => !v)}>
-              <HeartIcon filled={showSaved} />
-              {favorites.length > 0 && <i className="badge">{favorites.length}</i>}
-            </button>
             <button type="button" className={"icon" + (panel === "filter" ? " open" : "")} aria-label="Filters" title="Filters" onClick={() => togglePanel("filter")}>
               <FilterIcon />
               {nFilters > 0 && <i className="badge">{nFilters}</i>}
@@ -462,7 +567,13 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
               <span className="initial">{(email[0] || "?")}</span>
             </button>
           </div>
-          <p className="sub" id="count">{showSaved ? `${favorites.length} saved ${favorites.length === 1 ? "place" : "places"}` : count}</p>
+          {viewing ? (
+            <p className="sub" id="count">
+              <i className="swatch-dot" style={{ background: colorHex(viewing.color) }} />
+              <b>{viewing.name}</b> · {viewing.items.length} {viewing.items.length === 1 ? "place" : "places"}
+              <button type="button" className="link" onClick={() => setViewList(null)}>Back to results</button>
+            </p>
+          ) : <p className="sub" id="count">{count}</p>}
           <div className="progress"><i /></div>
         </div>
 
@@ -472,30 +583,37 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
           <div className="panel account">
             <p className="sub">Signed in as</p>
             <p className="p1" title={email}>{email}</p>
+            <div className="row plan-row">
+              <PlanBadge plan={plan} />
+              <span className="sub">{plan === "premium" ? "Saved lists and future premium features are unlocked." : billing ? PREMIUM_PRICE_LABEL : "Saved lists need Premium."}</span>
+            </div>
+            {billingNote && <p className="p2 billing-note" role="status">{billingNote}</p>}
+            {billing && plan === "free" && <UpgradeButton />}
+            {billing && plan === "premium" && <ManageBillingButton />}
             <form action="/auth/signout" method="post" className="foot">
-              <span className="sub">Saved places sync to your account.</span>
+              <span className="sub">{plan === "premium" ? "Saved places sync to your account." : "Search is free for everyone."}</span>
               <button type="submit" className="chip"><SignOutIcon />Sign out</button>
             </form>
           </div>
         )}
 
         <div id="list" ref={listEl}>
-          {favNote && <p className="sub" style={{ padding: "10px 16px", color: "var(--accent-ink)" }}>{favNote}</p>}
+          {listsNote && <p className="sub" style={{ padding: "10px 16px", color: "var(--accent-ink)" }}>{listsNote}</p>}
           {listItems.map((r, i) => (
-            <RestaurantCard key={r.id} r={r} index={i} active={detail?.id === r.id} meal={filters.meal}
-              onClick={() => (showSaved ? openSaved(r) : highlight(r.id, true))} />
+            <RestaurantCard key={r.id} r={r} index={i} active={detail?.id === r.id} meal={filters.meal} tags={colorsOf(r.id)}
+              onClick={() => (viewing ? openSaved(r) : highlight(r.id, true))} />
           ))}
-          {!showSaved && items.length > 0 && <div id="sentinel" ref={sentinelRef} />}
-          {showSaved && favorites.length === 0 && (
-            <div className="empty"><h2>Nothing saved yet</h2><p className="p2">Tap the heart on a place to keep it here.</p></div>
+          {!viewing && items.length > 0 && <div id="sentinel" ref={sentinelRef} />}
+          {viewing && viewing.items.length === 0 && (
+            <div className="empty"><h2>Nothing in {viewing.name} yet</h2><p className="p2">{viewing.isMain ? "Tap the heart on a place to keep it here." : "Open a place and use “Add to list”."}</p></div>
           )}
-          {!showSaved && searched && !loading && items.length === 0 && (
+          {!viewing && searched && !loading && items.length === 0 && (
             <div className="empty"><h2>Nothing here</h2><p className="p2">Try fewer filters, or search a wider area.</p></div>
           )}
         </div>
       </aside>
 
-      {detail && <DetailPanel key={detail.id} r={detail} saved={isSaved(detail.id)} onToggleSave={() => toggleFavorite(detail)} onClose={closeDetail} />}
+      {detail && <DetailPanel key={detail.id} r={detail} lists={lists} locked={!hasLists} billing={billing} onToggleList={(l) => toggleInList(l, detail)} onCreateList={(d) => newList(d, detail)} onClose={closeDetail} />}
 
       <div id="ctl" className="float">
         <button type="button" aria-label="Zoom in" onClick={() => E.map?.zoomIn()}><ZoomInIcon /></button>
@@ -504,10 +622,11 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
       <button type="button" id="recenter" className={"float" + (showRecenter ? " show" : "")} title="Back to me" onClick={recenter}><RecenterIcon /></button>
 
       <div id="dock">
-        <div id="areaBar" className={"float" + (showArea ? " show" : "") + (loading ? " loading" : "")}>
+        <div id="areaBar" className={"float" + (showArea && !viewing ? " show" : "") + (loading ? " loading" : "")}>
           <button type="button" disabled={loading} onClick={searchArea}><RefreshIcon /><span>{loading ? "Searching…" : "Search this area"}</span></button>
           <div className="bar"><i /></div>
         </div>
+        <div id="bar">
         <div id="search" className="float">
           <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); submit(); }}>
             <SearchIcon />
@@ -521,6 +640,20 @@ export default function TabeDogApp({ email, userId }: { email: string; userId: s
               {suggest.map((g, i) => <div key={g.code} className={"p1" + (i === selIdx ? " sel" : "")} onMouseDown={() => submit(g.label)}>{g.label}</div>)}
             </div>
           )}
+        </div>
+        <div id="listsWrap">
+          <button type="button" id="listsBtn" className={"float" + (showLists || upsell ? " open" : "") + (viewing ? " on" : "")} aria-label="Your lists" aria-expanded={showLists || upsell} title={hasLists ? "Your lists" : "Your lists (Premium)"}
+            onClick={() => (hasLists ? setShowLists((v) => !v) : setUpsell((v) => !v))}>
+            <HeartIcon size={22} filled={!!viewing} />
+            {lists.length > 1 && <i className="badge">{lists.length}</i>}
+            {!hasLists && <i className="lock" aria-hidden="true" />}
+          </button>
+          {upsell && <UpgradePrompt feature="lists" id="listsUpsell" billing={billing} onClose={closeUpsell} />}
+          {showLists && hasLists && (
+            <ListsPanel lists={lists} viewing={viewList} onOpen={openList}
+              onCreate={(d) => newList(d)} onUpdate={editList} onDelete={removeList} />
+          )}
+        </div>
         </div>
       </div>
 

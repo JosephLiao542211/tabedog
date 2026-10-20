@@ -4,8 +4,10 @@
 import * as cheerio from "cheerio";
 import { cached } from "./cache";
 import { haversine } from "./geo";
+import { bigPhoto, priceYenOf } from "./format";
 import { RANGES, resolveGenre } from "./genres";
-import type { Pay, Restaurant, SearchResponse, SortKey } from "./types";
+import { parseSchedule } from "./hours";
+import type { Pay, Restaurant, Review, ReviewsResponse, SearchResponse, SortKey } from "./types";
 
 const MOBILE_UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
@@ -16,7 +18,7 @@ const LIST_TTL = 15 * 60;              // seconds: a scraped listing page
 const INFO_TTL = 90 * 24 * 60 * 60;    // seconds: a restaurant's coordinates, address, hours
 const DETAIL_CONCURRENCY = 6;
 const TABELOG_PAGES_PER_CALL = 2;      // 2 x 20 results per search call
-const SORTS: SortKey[] = ["distance", "rating", "reviews"];
+const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
 
 export class TabelogError extends Error {
   constructor(message: string, public source?: string) { super(message); }
@@ -31,7 +33,12 @@ async function fetchHtml(url: string, ua: string) {
 // ---------- listing scrape (mobile markup) ----------
 type ListItem = Omit<Restaurant, "lat" | "lng" | "address" | "hours" | "pay" | "photos" | "access" | "distM" | "open">;
 
-function parseList(html: string): ListItem[] {
+function thumb(img: ReturnType<ReturnType<typeof cheerio.load>>): string | null {
+  const u = img.attr("data-lazy") || img.attr("data-src") || img.attr("src") || "";
+  return /^https?:\/\//.test(u) ? u : null; // skip the clear.gif placeholder
+}
+
+export function parseList(html: string): ListItem[] {
   const $ = cheerio.load(html);
   const text = (el: unknown) => $(el as string).text().replace(/\s+/g, " ").trim();
   const items: ListItem[] = [];
@@ -63,14 +70,14 @@ function parseList(html: string): ListItem[] {
       dinner: prices.dinner || "",
       lunch: prices.lunch || "",
       closed: text(card.find(".list-rst__subdata-subject--holiday").siblings(".list-rst__subdata-text")),
-      image: card.find(".list-rst__photo-img").first().attr("data-lazy") || null,
+      // the first card on a page is eagerly loaded (src), the rest are lazy (data-lazy)
+      image: thumb(card.find(".list-rst__photo-img").first()),
     });
   });
   return items;
 }
 
 // ---------- coordinates, hours, payment, photos from the desktop detail page ----------
-const big = (u: string | null | undefined) => (u ? u.replace(/\/\d+x\d+_(?:square|rect)_/, "/640x640_rect_") : u ?? null);
 
 type Info = { v: 2; lat: number; lng: number; address: string; hours: string; pay: Pay; photos: string[]; access: string };
 type InfoResult = Omit<Info, "v"> | { lat: null; lng: null; address: ""; hours: ""; pay: null; photos: never[]; access: ""; error: string };
@@ -90,7 +97,7 @@ async function getInfo(item: ListItem): Promise<InfoResult> {
       qr: /qr code payments? accepted/i.test(payText),
       cash: !/cash(?:less| not accepted)/i.test(payText),
     };
-    const photos = $(".rstdtl-top-postphoto__item img").map((_, i) => big($(i).attr("src"))).get().filter((p): p is string => !!p).slice(0, 10);
+    const photos = $(".rstdtl-top-postphoto__item img").map((_, i) => bigPhoto($(i).attr("src"))).get().filter((p): p is string => !!p).slice(0, 10);
     const access = row("transportation").split(/\s*(?:・|^-\s|\s-\s)\s*/).map((t) => t.trim()).filter((t) => /walk|station|min/i.test(t))[0] || "";
     const hours = row("business hours").replace(/Hours and closed days may change.*$/i, "").trim();
     return { v: 2, lat: Number(m[1]), lng: Number(m[2]), address, hours, pay, photos, access };
@@ -100,51 +107,25 @@ async function getInfo(item: ListItem): Promise<InfoResult> {
 }
 
 // ---------- open / closed right now (JST) ----------
-// Tabelog hours come as day groups: "Mon, Tue, Wed 11:00 AM - 10:30 PM Sat Open 24 hours",
-// older pages as "■Business hours 19:00 - 3:00 ■Closed on Mondays".
+// Uses the structured schedule from lib/hours.ts. "Closed on …" text (from the listing and the
+// detail-page notes) can also rule today out, except for things like "the second Tuesday of each month".
 const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const TIME = /(\d{1,2}):(\d{2})\s*(am|pm)?\s*[-–~〜]\s*(\d{1,2}):(\d{2})\s*(am|pm)?/i;
-const toMin = (h: string | number, m: string | number, ap?: string | null) => {
-  let hh = +h % 24;
-  if (ap) hh = (hh % 12) + (ap.toLowerCase() === "pm" ? 12 : 0);
-  return hh * 60 + +m;
-};
-type HourGroup = { days: Set<number> | null; ranges: [number, number][] };
-
-export function parseHours(text: string | null | undefined): HourGroup[] {
-  const groups: HourGroup[] = [];
-  let cur: HourGroup | null = null;
-  const tokens = String(text || "").replace(/public holiday|day before public holiday/gi, "").matchAll(
-    new RegExp(`\\b(${DAYS.join("|")})[a-z]*\\b|open 24 hours|${TIME.source}`, "gi"));
-  for (const t of tokens) {
-    const tok = t[0].toLowerCase();
-    if (DAYS.includes(tok.slice(0, 3)) && !/\d/.test(tok)) {
-      if (!cur || cur.ranges.length) { cur = { days: new Set(), ranges: [] }; groups.push(cur); }
-      cur.days!.add(DAYS.indexOf(tok.slice(0, 3)));
-      continue;
-    }
-    if (!cur) { cur = { days: null, ranges: [] }; groups.push(cur); }
-    if (tok === "open 24 hours") { cur.ranges.push([0, 1440]); continue; }
-    const m = t[0].match(TIME)!;
-    const s = toMin(m[1], m[2], m[3] || (m[6] && +m[1] <= 12 && +m[1] >= 1 && m[6].toLowerCase() === "pm" && +m[4] >= +m[1] ? null : m[3]));
-    let e = toMin(m[4], m[5], m[6]);
-    if (e <= s) e += 1440;
-    cur.ranges.push([s, e]);
-  }
-  return groups.filter((g) => g.ranges.length);
-}
+const ORDINAL_DAY = /\b(?:1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)(?:\s*(?:,|and|&)\s*(?:1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last))*\s+(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*/gi;
 
 export function openNow(hoursText: string | null | undefined, closedText: string | null | undefined, at = Date.now()): boolean | null {
   const d = new Date(at + 9 * 3600e3); // JST
   const day = d.getUTCDay(), now = d.getUTCHours() * 60 + d.getUTCMinutes();
-  const closedPart = `${closedText || ""} ${(String(hoursText || "").match(/closed on[^■]*/i) || [""])[0]}`;
-  if (!/every ?day|no holiday|none|daily/i.test(closedPart) && new RegExp(`\\b${DAYS[day]}`, "i").test(closedPart)) return false;
-  const groups = parseHours(hoursText);
-  if (!groups.length) return null;
-  const forDay = (dd: number) => groups.filter((g) => !g.days || g.days.has(dd)).flatMap((g) => g.ranges);
+  const sched = parseSchedule(hoursText);
+  const closedPart = [closedText || "", ...sched.notes.filter((n) => /closed|holiday/i.test(n.label) || /^closed on/i.test(n.text)).map((n) => n.text)]
+    .join(" ").replace(ORDINAL_DAY, "");
+  if (!/every ?day|no holiday|none|daily|year-round/i.test(closedPart) && new RegExp(`\\b${DAYS[day]}`, "i").test(closedPart)) return false;
+  const rows = sched.rows;
+  if (!rows.length) return null;
+  const forDay = (dd: number) => rows.filter((r) => !r.days || r.days.includes(dd as 0)).flatMap((r) => (r.closed ? [] : r.slots.map((s) => [s.start, s.end] as const)));
   const today = forDay(day), yesterday = forDay((day + 6) % 7);
-  const anyDayed = groups.some((g) => g.days);
+  const anyDayed = rows.some((r) => r.days);
   if (anyDayed && !today.length && !yesterday.some(([, e]) => e > 1440)) return false;
+  if (!today.length && !yesterday.length) return null;
   return today.some(([s, e]) => now >= s && now < e) || yesterday.some(([s, e]) => e > 1440 && now + 1440 >= s && now + 1440 < e);
 }
 
@@ -235,7 +216,7 @@ export async function search(p: SearchParams): Promise<SearchResponse> {
     const { error: _error, image, ...rest } = it as PageItem & { error?: string };
     items.push({
       ...rest,
-      image: big(image),
+      image: image || rest.photos?.[0] || null, // 150px listing thumbnail; cards are 64px so no need to enlarge
       distM: rest.lat != null ? Math.round(haversine(origin, { lat: rest.lat, lng: rest.lng! })) : rest.tabelogDistanceM,
       open: openNow(rest.hours, rest.closed),
     });
@@ -247,6 +228,7 @@ export async function search(p: SearchParams): Promise<SearchResponse> {
   if (p.open) items = items.filter((r) => r.open === true);
   const key: Record<SortKey, (r: Restaurant) => number> = {
     distance: (r) => r.distM ?? 1e12, rating: (r) => -(r.rating ?? 0), reviews: (r) => -(r.reviews ?? 0),
+    price_asc: (r) => priceYenOf(r, p.meal) ?? 1e12, price_desc: (r) => -(priceYenOf(r, p.meal) ?? -1), // unknown budgets sink to the bottom either way
   };
   items.sort((a, b) => key[p.sort](a) - key[p.sort](b));
   const widened = items.length > 0 && items.every((r) => r.distM != null && r.distM > RANGES[p.range]);
@@ -254,4 +236,57 @@ export async function search(p: SearchParams): Promise<SearchResponse> {
     fetchedAt: pages[0].fetchedAt, source: urls[0], page: p.page, hasMore: lastFull && !ratingCutoff,
     origin, radiusM: RANGES[p.range], genre, sort: p.sort, widened, items,
   };
+}
+
+// ---------- reviews (desktop review list + the first few full review pages) ----------
+const REVIEWS_TTL = 24 * 60 * 60;   // seconds
+const FULL_REVIEWS = 5;             // excerpts beyond this link to Tabelog for the rest
+const RESTAURANT_URL = /^https:\/\/tabelog\.com\/en\/[a-z]+\/A\d{4}\/A\d{6}\/\d+\/$/;
+
+export const isRestaurantUrl = (u: string) => RESTAURANT_URL.test(u);
+
+function parseReviewItem($: cheerio.CheerioAPI, el: Parameters<cheerio.CheerioAPI>[0]): Review | null {
+  const it = $(el);
+  const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+  const href = it.find(".rvw-item__title-target").attr("href") || "";
+  const id = (href.match(/\/dtlrvwlst\/(B\d+)\//) || [])[1] || it.attr("data-rvw-id") || "";
+  if (!id) return null;
+  const timeCls = it.find(".c-rating-v3__time").attr("class") || "";
+  const avatar = it.find(".rvw-item__rvwr-img").attr("src") || it.find(".rvw-item__rvwr-img").attr("data-src") || null;
+  const text = clean(it.find(".rvw-item__rvw-comment").text());
+  return {
+    id, url: href.split("?")[0],
+    title: clean(it.find(".rvw-item__title").text()),
+    text, full: !/\.{3}$|…$/.test(text),
+    rating: parseFloat(clean(it.find(".c-rating-v3__val").first().text())) || null,
+    meal: /--dinner/.test(timeCls) ? "dinner" : /--lunch/.test(timeCls) ? "lunch" : null,
+    amount: clean(it.find(".rvw-item__payment-amount-delimiter").text()),
+    visited: clean(it.find(".rvw-item__date-inner span").first().text()).replace(/^visited on\s*/i, ""),
+    visits: clean(it.find(".rvw-item__count-num").text()),
+    reviewer: clean(it.find(".rvw-item__rvwr-name").text()),
+    reviewerUrl: it.find(".rvw-item__rvwr-name").attr("href") || "",
+    avatar: avatar && /^https?:/.test(avatar) ? avatar : null,
+    photos: it.find(".rvw-photo__list-item img").map((_, i) => bigPhoto($(i).attr("src") || $(i).attr("data-src"))).get().filter((p): p is string => !!p).slice(0, 6),
+  };
+}
+
+/** The newest reviews for a restaurant. The list page only carries excerpts, so the first few are completed from their own pages. */
+export async function getReviews(url: string): Promise<ReviewsResponse> {
+  if (!isRestaurantUrl(url)) throw new TabelogError("not a Tabelog restaurant URL", url);
+  const id = url.match(/(\d+)\/$/)![1];
+  return cached<ReviewsResponse>(`reviews:v2:${id}`, REVIEWS_TTL, async () => {
+    const $ = cheerio.load(await fetchHtml(url + "dtlrvwlst/", DESKTOP_UA));
+    const seen = new Set<string>(); // a pinned review can appear twice on the page
+    const items = $(".rvw-item").map((_, el) => parseReviewItem($, el)).get()
+      .filter((r): r is Review => !!r && !seen.has(r.id) && !!seen.add(r.id));
+    await mapLimit(items.slice(0, FULL_REVIEWS), 3, async (r) => {
+      if (r.full || !r.url) return;
+      try {
+        const $$ = cheerio.load(await fetchHtml(r.url, DESKTOP_UA));
+        const full = $$(".rvw-item__rvw-comment").first().text().replace(/\s+/g, " ").trim();
+        if (full.length > r.text.length) { r.text = full; r.full = true; }
+      } catch { /* keep the excerpt */ }
+    });
+    return { url: url + "dtlrvwlst/", items };
+  });
 }

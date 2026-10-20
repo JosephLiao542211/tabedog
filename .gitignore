@@ -11,3 +11,4 @@ supabase/.branches/
 # legacy caches from the Express version
 cache.sqlite
 coords-cache.json
+.vercel

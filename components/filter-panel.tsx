@@ -45,7 +45,7 @@ export function FilterPanel({ f, onChange, onReset }: { f: Filters; onChange: (p
   );
 }
 
-const SORTS: Array<[SortKey, string]> = [["distance", "Nearest first"], ["rating", "Highest rated"], ["reviews", "Most reviewed"]];
+const SORTS: Array<[SortKey, string]> = [["distance", "Nearest first"], ["rating", "Highest rated"], ["reviews", "Most reviewed"], ["price_asc", "Cheapest first"], ["price_desc", "Priciest first"]];
 
 export function SortPanel({ value, onChange }: { value: SortKey; onChange: (s: SortKey) => void }) {
   return (
