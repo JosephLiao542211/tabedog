@@ -18,6 +18,7 @@ import { ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, Upg
 import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
 import { FilterIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
+import { fullHeight, sheetPx, useMobile, useSheet } from "./use-sheet";
 
 type Loc = { lat: number; lng: number; acc?: number | null; src?: string; at?: number };
 type Center = { lat: number; lng: number };
@@ -95,6 +96,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
   const hasLists = can(plan, "lists"); // saving lists is a premium feature; free users get an upgrade prompt instead
   const mapEl = useRef<HTMLDivElement>(null);
   const listEl = useRef<HTMLDivElement>(null);
+  const toolbarEl = useRef<HTMLDivElement>(null);
   const qEl = useRef<HTMLInputElement>(null);
   const supabase = useMemo(() => createClient(), []);
 
@@ -147,12 +149,23 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
   const setFilters = (f: Filters) => { E.filters = f; setFiltersState(f); };
   const setCenter = (c: Center | null) => { E.center = c; };
 
+  // ---------- phones: the results and the detail are bottom sheets you drag up and down ----------
+  const mobile = useMobile();
+  const listSheet = useSheet({
+    active: mobile, cssVar: "--sheet", handle: toolbarEl, body: listEl,
+    stops: () => ({ peek: toolbarEl.current?.offsetHeight ?? 96, half: window.innerHeight * 0.44, full: fullHeight() }),
+  });
+  // the filter / sort / account panels hang off the toolbar, so a peeking sheet would clip them
+  useEffect(() => { if (mobile && panel && listSheet.stop === "peek") listSheet.snapTo("half"); }, [panel]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---------- geometry helpers: the floating panels cover part of the map ----------
   const wide = () => window.innerWidth > 800;
+  // how much of the bottom of the map a sheet covers on a phone
+  const cover = () => E.detailOpen ? (sheetPx("--sheet-detail") || window.innerHeight * 0.72) : (sheetPx("--sheet") || window.innerHeight * 0.44);
   const fitPadding = () => wide()
     ? { left: 380 + 48, top: 60, right: E.detailOpen ? 360 + 48 : 80, bottom: 110 }
-    : { left: 30, top: 70, right: 30, bottom: window.innerHeight * 0.44 + 90 };
-  const viewOffset = (): [number, number] => wide() ? [((380 + 16) - (E.detailOpen ? 360 + 16 : 0)) / 2, 0] : [0, -window.innerHeight * 0.22];
+    : { left: 30, top: 70, right: 30, bottom: Math.min(cover(), window.innerHeight * 0.6) + 90 };
+  const viewOffset = (): [number, number] => wide() ? [((380 + 16) - (E.detailOpen ? 360 + 16 : 0)) / 2, 0] : [0, -Math.min(cover(), window.innerHeight * 0.72) / 2];
   const visualCenter = () => { const map = E.map!; const p = map.project(map.getCenter()), o = viewOffset(); return map.unproject([p.x + o[0], p.y + o[1]]); };
 
   // ---------- "you are here" marker ----------
@@ -202,7 +215,11 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     E.detailOpen = false; setDetail(null);
     document.querySelectorAll(".pin.active").forEach((p) => p.classList.remove("active"));
   }
-  function openDetail(r: Restaurant) { E.detailOpen = true; setDetail(r); }
+  function openDetail(r: Restaurant) {
+    E.detailOpen = true; setDetail(r);
+    // the detail sheet lands on top; leave the map visible underneath for when it closes
+    if (mobile && listSheet.stop === "full") listSheet.snapTo("half");
+  }
   function highlight(id: string, pan: boolean) {
     document.querySelectorAll(".pin.active").forEach((p) => p.classList.remove("active"));
     const r = E.items.find((x) => x.id === id); if (!r) return;
@@ -295,7 +312,10 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
       if (my === E.reqId) setLoading(false);
     }
   }
-  const restart = (opts: LoadOpts = {}) => { E.page = 1; load({ keepView: true, ...opts }); };
+  const restart = (opts: LoadOpts = {}) => {
+    E.page = 1; load({ keepView: true, ...opts });
+    if (mobile && listSheet.stop === "peek") listSheet.snapTo("half"); // a new search brings its results up
+  };
 
   // ---------- my location: cookie -> GPS -> IP, all automatic ----------
   function applyLocation(loc: Loc) {
@@ -551,11 +571,13 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
   }, [medals]);
 
   return (
-    <div className={"app" + (detail ? " has-detail" : "")}>
+    <div className={"app" + (detail ? " has-detail" : "") + (mobile ? ` sheet-${listSheet.stop}` : "")}>
       <div id="map" ref={mapEl} />
 
       <aside className="float">
-        <div id="toolbar" className={loading ? "loading" : ""}>
+        <div id="toolbar" ref={toolbarEl} className={loading ? "loading" : ""}>
+          <button type="button" className="grip" aria-label={listSheet.stop === "full" ? "Collapse results" : "Expand results"}
+            onClick={() => listSheet.snapTo(listSheet.stop === "full" ? "peek" : listSheet.stop === "half" ? "full" : "half")}><i /></button>
           <div className="row">
             <div className="brand"><Logo /><p className="h1">TabeDog</p></div>
             <button type="button" className={"icon" + (panel === "filter" ? " open" : "")} aria-label="Filters" title="Filters" onClick={() => togglePanel("filter")}>
@@ -613,7 +635,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
         </div>
       </aside>
 
-      {detail && <DetailPanel key={detail.id} r={detail} lists={lists} locked={!hasLists} billing={billing} onToggleList={(l) => toggleInList(l, detail)} onCreateList={(d) => newList(d, detail)} onClose={closeDetail} />}
+      {detail && <DetailPanel key={detail.id} r={detail} lists={lists} locked={!hasLists} billing={billing} mobile={mobile} onToggleList={(l) => toggleInList(l, detail)} onCreateList={(d) => newList(d, detail)} onClose={closeDetail} />}
 
       <div id="ctl" className="float">
         <button type="button" aria-label="Zoom in" onClick={() => E.map?.zoomIn()}><ZoomInIcon /></button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Restaurant, Review, ReviewsResponse } from "@/lib/types";
 import { colorHex, type SavedList } from "@/lib/lists";
 import { AddToListMenu, type ListDraft } from "./lists";
@@ -8,6 +8,7 @@ import { UpgradePrompt } from "./upgrade";
 import { bigPhoto, fmtDist, fmtPrice } from "@/lib/format";
 import { StatusDot } from "./restaurant-card";
 import { Hours } from "./hours";
+import { fullHeight, useSheet } from "./use-sheet";
 import { ArrowOut, CardIcon, CashIcon, ChevronLeft, ChevronRight, ClockIcon, ForkIcon, HeartIcon, ListPlusIcon, PinIcon, QrIcon, TrainIcon, XIcon, YenIcon } from "./icons";
 
 const FactLine = ({ icon, main, sub }: { icon: ReactNode; main: ReactNode; sub?: ReactNode }) =>
@@ -69,9 +70,16 @@ function Reviews({ r }: { r: Restaurant }) {
 
 // Remount with key={r.id} so the gallery index and scroll position reset per restaurant.
 // `locked`: the user is on the free plan, so the heart and "add to list" open a Premium prompt instead.
-export function DetailPanel({ r, lists, locked = false, billing = false, onToggleList, onCreateList, onClose }: {
-  r: Restaurant; lists: SavedList[]; locked?: boolean; billing?: boolean; onToggleList: (l: SavedList) => void; onCreateList: (d: ListDraft) => void; onClose: () => void;
+// `mobile`: the panel is a bottom sheet; drag the photo to resize it, pull it right down to close.
+export function DetailPanel({ r, lists, locked = false, billing = false, mobile = false, onToggleList, onCreateList, onClose }: {
+  r: Restaurant; lists: SavedList[]; locked?: boolean; billing?: boolean; mobile?: boolean; onToggleList: (l: SavedList) => void; onCreateList: (d: ListDraft) => void; onClose: () => void;
 }) {
+  const galleryEl = useRef<HTMLDivElement>(null);
+  const factsEl = useRef<HTMLDivElement>(null);
+  const sheet = useSheet({
+    active: mobile, cssVar: "--sheet-detail", handle: galleryEl, body: factsEl, onDismiss: onClose,
+    stops: () => ({ peek: window.innerHeight * 0.4, half: window.innerHeight * 0.72, full: fullHeight() }),
+  });
   const main = lists.find((l) => l.isMain);
   const liked = !!main?.items.some((x) => x.id === r.id);
   const inLists = lists.filter((l) => l.items.some((x) => x.id === r.id));
@@ -86,9 +94,10 @@ export function DetailPanel({ r, lists, locked = false, billing = false, onToggl
   const access = String(r.access || r.station || "").split(/(?<=\.)\s+/)[0];
 
   return (
-    <section id="detail" className="float">
-      <div id="gallery">
-        {photos.length ? <img src={photos[i]} alt="" /> : null}
+    <section id="detail" className={"float" + (mobile ? ` sheet-${sheet.stop}` : "")}>
+      <div id="gallery" ref={galleryEl}>
+        {photos.length ? <img src={photos[i]} alt="" draggable={false} /> : null}
+        {mobile && <button type="button" className="grip" aria-label={sheet.stop === "full" ? "Shrink" : "Expand"} onClick={() => sheet.snapTo(sheet.stop === "full" ? "half" : "full")}><i /></button>}
         {photos.length > 1 && (
           <>
             <button className="nav prev" aria-label="Previous photo" onClick={() => show(i - 1)}><ChevronLeft /></button>
@@ -110,7 +119,7 @@ export function DetailPanel({ r, lists, locked = false, billing = false, onToggl
       </div>
       {picking && !locked && <AddToListMenu lists={lists} restaurantId={r.id} onToggle={onToggleList} onCreate={onCreateList} onClose={closePick} />}
       {upsell && locked && <UpgradePrompt feature="lists" id="detailUpsell" billing={billing} onClose={closeUpsell} />}
-      <div id="facts">
+      <div id="facts" ref={factsEl}>
         <h2>{r.name}</h2>
         <p className="p1"><span className="star">★ {r.rating ?? "–"}</span> · {r.reviews.toLocaleString()} reviews{r.distM != null ? ` · ${fmtDist(r.distM)} away` : ""}</p>
         <a className="btn" href={r.url} target="_blank" rel="noopener">Reserve<ArrowOut /></a>
