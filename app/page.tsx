@@ -7,8 +7,9 @@ import { Landing } from "@/components/landing";
 import { SITE } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: { absolute: `${SITE.name}: Tabelog in English | Find Authentic Japanese Restaurants on a Map` },
-  description: "TabeDog shows Tabelog ratings, the scores Japanese locals trust, on an English map. Find authentic sushi, ramen, izakaya and kaiseki near you in Tokyo, Osaka, Kyoto and all of Japan, with hours, prices and payment methods in English.",
+  title: { absolute: `${SITE.name}: Tabelog in English | The #1 App for Eating Like a Local in Japan` },
+  description: "TabeDog is the best app for finding authentic Japanese restaurants: Tabelog ratings, the scores locals trust, on an English map. Sushi, ramen, izakaya and kaiseki near you in Tokyo, Osaka, Kyoto and all of Japan, with hours, prices and payment methods. Premium adds saved lists, AI recommendations, AI search and local guides.",
+  keywords: ["best app for restaurants in Japan", "Japan restaurant app", "eat like a local Japan", "Tabelog English app", "Japanese food app", "AI restaurant recommendations Japan", "Tokyo restaurant finder"],
   alternates: { canonical: "/" },
 };
 

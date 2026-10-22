@@ -1,6 +1,7 @@
 // Chrome shared by every public page: header, SEO footer, JSON-LD helper, FAQ block, CTA band.
+import Image from "next/image";
 import Link from "next/link";
-import { Logo } from "./icons";
+import { ArrowRight, Logo } from "./icons";
 import { CITIES, CUISINES, FEATURED, SITE, cityCuisineUrl, cityUrl, cuisineUrl, type Faq } from "@/lib/seo";
 
 export function JsonLd({ data }: { data: object | object[] }) {
@@ -29,15 +30,14 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <Link href="/" className="site-brand" aria-label="TabeDog home">
-        <Logo size={28} />
-        <span className="h1">TabeDog</span>
+        <Logo size={24} />
+        <span className="site-brand-name">TabeDog</span>
       </Link>
       <nav className="site-nav" aria-label="Primary">
-        <Link href="/tokyo">Tokyo</Link>
-        <Link href="/osaka">Osaka</Link>
-        <Link href="/kyoto">Kyoto</Link>
-        <Link href="/cuisine/ramen">Ramen</Link>
-        <Link href="/cuisine/sushi">Sushi</Link>
+        <Link href="/#cities">Cities</Link>
+        <Link href="/#cuisines">Cuisines</Link>
+        <Link href="/#premium">Premium</Link>
+        <Link href="/#faq">FAQ</Link>
       </nav>
       <div className="site-actions">
         <Link href="/login" className="site-link">Sign in</Link>
@@ -78,12 +78,15 @@ export function FaqSection({ faqs, title }: { faqs: Faq[]; title: string }) {
   );
 }
 
-export function CtaBand({ title, body, label = "Open the map", href = "/login" }: { title: string; body: string; label?: string; href?: string }) {
+export function CtaBand({ title, body, label = "Open the map", href = "/login", image }: { title: string; body: string; label?: string; href?: string; image?: string }) {
   return (
-    <section className="site-cta">
-      <h2 className="site-h2">{title}</h2>
-      <p className="p1">{body}</p>
-      <Link href={href} className="site-btn site-btn-lg">{label}</Link>
+    <section className={`site-cta${image ? " site-cta-photo" : ""}`}>
+      {image && <Image src={image} alt="" fill sizes="100vw" className="site-cta-img" />}
+      <div className="site-cta-body">
+        <h2 className="site-h2">{title}</h2>
+        <p className="p1">{body}</p>
+        <Link href={href} className="site-btn site-btn-lg">{label} <ArrowRight /></Link>
+      </div>
     </section>
   );
 }
@@ -122,6 +125,8 @@ export function SiteFooter() {
           <ul>
             <li><Link href="/login">Sign in</Link></li>
             <li><Link href="/login">Create a free account</Link></li>
+            <li><Link href="/#premium">TabeDog Premium</Link></li>
+            <li><Link href="/#best-app">Best app for restaurants in Japan</Link></li>
             <li><Link href="/#faq">Tabelog ratings explained</Link></li>
             <li><Link href="/#how">How TabeDog works</Link></li>
             <li><a href="https://tabelog.com/en/" rel="nofollow noopener" target="_blank">Tabelog (official site)</a></li>
@@ -132,11 +137,15 @@ export function SiteFooter() {
         <p className="p2">
           <strong>TabeDog</strong> is an English map of Japan's restaurants built on Tabelog ratings, the scores Japanese diners actually use.
           Find authentic sushi, ramen, yakiniku, izakaya, kaiseki and more in Tokyo, Osaka, Kyoto, Fukuoka and every other city in Japan,
-          with opening hours, price ranges and accepted payment methods in English.
+          with opening hours, price ranges and accepted payment methods in English. It is the #1 app for eating like a local in Japan:
+          the free map covers every Tabelog listing, and Premium adds saved lists, AI restaurant recommendations, AI search and curated local guides.
         </p>
         <p className="sub">
           TabeDog is an independent project and is not affiliated with, endorsed by or connected to Tabelog or Kakaku.com, Inc.
           Tabelog is a trademark of Kakaku.com, Inc. Ratings are shown with a link to their source. © {new Date().getFullYear()} TabeDog.
+        </p>
+        <p className="sub">
+          Map data © <a href="https://openfreemap.org" rel="noopener" target="_blank">OpenFreeMap</a>, <a href="https://www.openmaptiles.org/" rel="noopener" target="_blank">OpenMapTiles</a> and <a href="https://www.openstreetmap.org/copyright" rel="noopener" target="_blank">OpenStreetMap</a> contributors.
         </p>
       </div>
     </footer>

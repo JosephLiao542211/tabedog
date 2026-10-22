@@ -5,6 +5,7 @@ import { CITY_SLUGS } from "@/lib/seo";
 const PUBLIC_PATHS = [
   /^\/$/, /^\/login$/, /^\/auth\//,
   /^\/api\/billing\/webhook$/, // Stripe calls the webhook without a session
+  /^\/api\/landing-spots$/, // the pins behind the public landing page: one cached search, no user input
   /^\/sitemap\.xml$/, /^\/robots\.txt$/, /^\/opengraph-image/, /^\/twitter-image/,
   /^\/cuisine\/[a-z-]+$/, new RegExp(`^/(${CITY_SLUGS.join("|")})(/[a-z-]+)?$`), // public SEO hub pages
 ];

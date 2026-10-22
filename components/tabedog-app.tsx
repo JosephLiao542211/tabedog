@@ -4,6 +4,7 @@
 // MapLibre and its markers are driven imperatively through refs; everything the user sees is React state.
 import maplibregl, { type Map as MLMap, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { MAP_STYLE, tintMap } from "@/lib/map-style";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { RANGES } from "@/lib/genres";
 import { haversine } from "@/lib/geo";
@@ -35,7 +36,6 @@ const BILLING_NOTES: Record<string, string> = {
   nocustomer: "No subscription found for this account.",
 };
 const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 
 // ---------- my location cookie ----------
 function readLoc(): Loc | null {
@@ -106,6 +106,8 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     markers: {} as Record<string, Marker>,
     listMarkers: {} as Record<string, Marker>, // pins for saved places that aren't in the current results
     me: null as Marker | null,
+    watchId: null as number | null, // live tracking: the geolocation watch while the locate button is on
+    following: false,               // ...and whether the camera rides along with it
     filters: DEFAULT_FILTERS as Filters,
     center: null as Center | null,
     page: 1,
@@ -131,7 +133,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
   const [count, setCount] = useState("Finding you…");
   const [loading, setLoadingState] = useState(false);
   const [showArea, setShowArea] = useState(false);
-  const [showRecenter, setShowRecenter] = useState(false);
+  const [tracking, setTracking] = useState<"off" | "on" | "follow">("off");
   const [detail, setDetail] = useState<Restaurant | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
@@ -172,13 +174,17 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
   function renderMe() {
     const map = E.map; if (!map) return;
     const loc = readLoc();
-    if (E.me) { E.me.remove(); E.me = null; }
-    if (!loc) return;
-    const d = document.createElement("div");
-    d.className = "person" + (String(loc.src || "").startsWith("ip") ? " coarse" : "");
+    if (!loc) { E.me?.remove(); E.me = null; return; }
+    // move the existing marker rather than rebuilding it, so live tracking glides instead of flickering
+    if (!E.me) {
+      const d = document.createElement("div");
+      d.innerHTML = PERSON_SVG;
+      E.me = new maplibregl.Marker({ element: d }).setLngLat([loc.lng, loc.lat]).addTo(map);
+    }
+    const d = E.me.getElement();
+    d.className = "person" + (String(loc.src || "").startsWith("ip") ? " coarse" : "") + (E.watchId != null ? " live" : "");
     d.title = (loc.acc || 0) > 1000 ? "Roughly where you are (from your IP)" : `You are here (±${Math.round(loc.acc || 0)} m)`;
-    d.innerHTML = PERSON_SVG;
-    E.me = new maplibregl.Marker({ element: d }).setLngLat([loc.lng, loc.lat]).addTo(map);
+    E.me.setLngLat([loc.lng, loc.lat]);
   }
   const writeLoc = (loc: Loc) => { writeLocCookie(loc); renderMe(); };
 
@@ -195,7 +201,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     for (const [k, m] of Object.entries(RANGES)) if (m <= half) best = k;
     return best;
   }
-  // show "Search this area" once the view has left the searched spot, and "back to me" once away from home
+  // show "Search this area" once the view has left the searched spot
   function checkMoved() {
     if (E.loading || E.pendingRef || !E.map) return;
     const c = visualCenter(), home = readLoc();
@@ -206,7 +212,6 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
       moved = haversine(E.refCenter || E.lastSearched, c) > Math.max(E.lastSearched.radiusM * 0.25, 60) || RANGES[rangeForViewport()] > E.lastSearched.radiusM * 1.5;
     } else if (home) moved = haversine(home, c) > 150;
     setShowArea(moved && E.map.getZoom() >= 10);
-    setShowRecenter(!!home && haversine(home, c) > 120);
   }
   function setLoading(on: boolean) { E.loading = on; setLoadingState(on); if (!on) checkMoved(); }
 
@@ -227,7 +232,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     openDetail(r);
     const m = E.markers[id], map = E.map; if (!m || !map) return;
     m.getElement().classList.add("active");
-    E.quietMove = true;
+    E.quietMove = true; unfollow();
     const visible = map.getBounds().contains(m.getLngLat());
     if (pan || !visible) map.flyTo({ center: m.getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 500, offset: viewOffset() });
     else map.panBy([0, 0], { duration: 0 });
@@ -237,7 +242,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     openDetail(r);
     (E.markers[r.id] || E.listMarkers[r.id])?.getElement().classList.add("active");
     const map = E.map; if (!map || r.lat == null || r.lng == null) return;
-    E.quietMove = true;
+    E.quietMove = true; unfollow();
     map.flyTo({ center: [r.lng, r.lat], zoom: Math.max(map.getZoom(), 15), duration: 500, offset: viewOffset() });
   }
 
@@ -359,6 +364,36 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     } catch { /* GPS or a manual pin will do */ }
   }
 
+  // ---------- live tracking: the locate button pins you to your GPS and keeps the pin on you as you move ----------
+  const follow = (loc: Center) => E.map?.easeTo({ center: [loc.lng, loc.lat], offset: viewOffset(), duration: 600 });
+  function unfollow() { if (E.following) { E.following = false; setTracking("on"); } }
+  function stopTracking() {
+    if (E.watchId != null) navigator.geolocation.clearWatch(E.watchId);
+    E.watchId = null; E.following = false; setTracking("off"); renderMe();
+  }
+  function startTracking() {
+    if (!navigator.geolocation) { setCount("This browser can’t share your location."); return; }
+    let first = true;
+    E.following = true; setTracking("follow");
+    E.watchId = navigator.geolocation.watchPosition((p) => {
+      const loc: Loc = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, src: "gps" };
+      if (first) {
+        // the first fix replaces whatever we had (IP guess, a hand-placed pin, a searched area) and searches from here
+        first = false;
+        setCenter(null); setFilters({ ...E.filters, range: "A" }); E.searchedOnce = false;
+        applyLocation(loc);
+        return;
+      }
+      // after that just move the pin (and the map, if following); "Search this area" offers a fresh search once you've walked off
+      writeLoc(loc);
+      if (E.following) follow(loc);
+    }, (err) => {
+      stopTracking();
+      setCount(err.code === err.PERMISSION_DENIED ? "Location is blocked. Allow it in your browser settings to track yourself." : "Couldn’t get a GPS fix. Try again outside or near a window.");
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    renderMe();
+  }
+
   // ---------- lists (Supabase `lists` + `list_items`, scoped by RLS) ----------
   // Every change is applied optimistically, then written; on failure the server copy is reloaded.
   const reloadLists = () => { if (hasLists) loadLists(supabase, userId).then(setLists).catch((e) => setListsNote(`Couldn’t load lists: ${(e as Error).message}`)); };
@@ -423,7 +458,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     const bounds = new maplibregl.LngLatBounds();
     l.items.forEach((r) => { if (r.lat != null && r.lng != null) bounds.extend([r.lng, r.lat]); });
     if (bounds.isEmpty()) return;
-    E.quietMove = true; closeDetail();
+    E.quietMove = true; closeDetail(); unfollow();
     map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 15, duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewList]);
@@ -433,15 +468,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     const map = new maplibregl.Map({ container: mapEl.current!, style: MAP_STYLE, center: [138.25, 36.2], zoom: 4.3, attributionControl: { compact: true } });
     E.map = map;
     map.once("load", () => {
-      // Positron's quiet linework with a little colour put back: blue water, green parks, warm land
-      const paint: Record<string, [string, string]> = {
-        background: ["background-color", "#f5f4ef"], water: ["fill-color", "#bcd9ea"], waterway: ["line-color", "#bcd9ea"],
-        park: ["fill-color", "#d3e8ca"], landcover_wood: ["fill-color", "#cfe3c6"], landuse_residential: ["fill-color", "#ece8df"],
-        building: ["fill-color", "#e7e3da"], highway_major_casing: ["line-color", "#dcd8cf"], highway_motorway_casing: ["line-color", "#dcd8cf"],
-        highway_minor: ["line-color", "#e4e1d9"], railway: ["line-color", "#d9d5cc"],
-      };
-      for (const [id, [prop, v]] of Object.entries(paint)) if (map.getLayer(id)) map.setPaintProperty(id, prop, v);
-      if (map.getLayer("building")) map.setPaintProperty("building", "fill-outline-color", "#d9d4c9");
+      tintMap(map);
       map.addSource("search-area", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "search-area-line", type: "line", source: "search-area", paint: { "line-color": "#ff6347", "line-width": 1.5, "line-dasharray": [3, 3], "line-opacity": 0.6 } });
       renderMe();
@@ -457,6 +484,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     map.on("touchend", () => clearTimeout(E.pressTimer));
     map.on("click", () => setCtx(null));
     map.on("movestart", (e) => { setCtx(null); if (e.originalEvent) E.quietMove = false; });
+    map.on("dragstart", unfollow); // panning by hand lets go of your position; tap locate to snap back
     map.on("moveend", checkMoved);
     map.on("zoomend", checkMoved);
 
@@ -494,6 +522,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onKey);
       E.observer?.disconnect(); E.observer = null;
+      if (E.watchId != null) navigator.geolocation.clearWatch(E.watchId);
       map.remove(); E.map = null; E.markers = {}; E.listMarkers = {}; E.me = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -523,7 +552,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); submit(suggest[selIdx].label); }
   }
 
-  // ---------- filters / sort / area / recenter ----------
+  // ---------- filters / sort / area / locate ----------
   const changeFilters = (patch: Partial<Filters>) => { setFilters({ ...E.filters, ...patch }); restart(); };
   const resetFilters = () => changeFilters({ pay: [], price: "", meal: "dinner", minRating: "", open: false });
   const togglePanel = (which: Exclude<Panel, null>) => setPanel((p) => (p === which ? null : which));
@@ -532,15 +561,19 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
     setCenter({ lat: c.lat, lng: c.lng });
     setFilters({ ...E.filters, range: rangeForViewport() });
     E.page = 1; load({ keepView: true });
+    unfollow();
   };
-  const recenter = () => {
+  // off -> track and follow; tracking but panned away -> snap back and follow; following -> stop tracking
+  const locate = () => {
+    if (E.watchId == null) return startTracking();
+    if (E.following) return stopTracking();
+    E.following = true; setTracking("follow");
     const home = readLoc(), map = E.map; if (!home || !map) return;
-    map.flyTo({ center: [home.lng, home.lat], zoom: Math.max(map.getZoom(), 14.5), duration: 600, offset: viewOffset() });
-    if (E.center) { setCenter(null); setFilters({ ...E.filters, range: "A" }); E.page = 1; load({ keepView: true }); }
-    if (isCoarse(home)) gps({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }).then(applyLocation).catch(() => {});
+    map.flyTo({ center: [home.lng, home.lat], zoom: Math.max(map.getZoom(), 15), duration: 600, offset: viewOffset() });
   };
   const setHere = () => {
     const ll = E.ctxAt; setCtx(null); if (!ll) return;
+    if (E.watchId != null) stopTracking(); // a hand-placed pin wins over GPS
     setCenter(null); E.searchedOnce = false;
     applyLocation({ lat: ll.lat, lng: ll.lng, acc: 0, src: "manual" });
   };
@@ -641,7 +674,8 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
         <button type="button" aria-label="Zoom in" onClick={() => E.map?.zoomIn()}><ZoomInIcon /></button>
         <button type="button" aria-label="Zoom out" onClick={() => E.map?.zoomOut()}><ZoomOutIcon /></button>
       </div>
-      <button type="button" id="recenter" className={"float" + (showRecenter ? " show" : "")} title="Back to me" onClick={recenter}><RecenterIcon /></button>
+      <button type="button" id="recenter" className={"float" + (tracking !== "off" ? " " + tracking : "")} aria-pressed={tracking !== "off"}
+        title={tracking === "off" ? "Track my location" : tracking === "follow" ? "Stop tracking" : "Follow me"} onClick={locate}><RecenterIcon /></button>
 
       <div id="dock">
         <div id="areaBar" className={"float" + (showArea && !viewing ? " show" : "") + (loading ? " loading" : "")}>

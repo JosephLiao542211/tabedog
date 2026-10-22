@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: { default: `${SITE.name}: ${SITE.tagline}`, template: `%s | ${SITE.name}` },
   description: SITE.description,
   applicationName: SITE.name,
-  keywords: ["Tabelog English", "Tabelog in English", "Japan restaurant map", "best restaurants Japan", "Tabelog rating meaning", "authentic Japanese restaurants"],
+  keywords: ["Tabelog English", "Tabelog in English", "Japan restaurant map", "best restaurants Japan", "best app for restaurants in Japan", "eat like a local Japan", "Tabelog rating meaning", "authentic Japanese restaurants", "Japanese food app"],
   icons: { icon: "/logo.svg" },
   openGraph: { type: "website", siteName: SITE.name, locale: "en_US", url: SITE.url, title: `${SITE.name}: ${SITE.tagline}`, description: SITE.description },
   twitter: { card: "summary_large_image", title: `${SITE.name}: ${SITE.tagline}`, description: SITE.description },
