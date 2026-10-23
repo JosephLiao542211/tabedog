@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CITIES, CUISINES, FEATURED, LANDING_FAQS, SITE, cityCuisineUrl, cityUrl, cuisineBySlug, cuisineUrl } from "@/lib/seo";
+import { CITIES, CUISINES, FEATURED, LANDING_FAQS, SITE, cityCuisineUrl, cityUrl, cuisineBySlug, cuisineUrl, mapHref } from "@/lib/seo";
 import { CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, faqSchema } from "./site";
 import { LandingMap, LandingSpots, MiniMap, SpotCard } from "./landing-map";
 import { ArrowRight, ClockIcon, Logo, MapIcon, FilterIcon, GlobeIcon, HeartIcon, PawIcon, PinIcon, ScaleIcon, SearchIcon, SparkIcon, StarIcon, UsersIcon } from "./icons";

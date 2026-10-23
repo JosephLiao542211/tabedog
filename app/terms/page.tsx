@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { SITE } from "@/lib/seo";
+import Link from "next/link";
+import { OPERATOR, SITE } from "@/lib/seo";
 import { SiteFooter, SiteHeader } from "@/components/site";
 
 export const metadata: Metadata = {
-  title: "Terms of Service and Privacy Policy",
-  description: `The terms for using ${SITE.name} and how we handle your data.`,
+  title: "Terms of Service",
+  description: `The terms for using ${SITE.name}: accounts, guest access, Premium billing and restaurant information.`,
   alternates: { canonical: "/terms" },
 };
 
@@ -46,12 +47,8 @@ export default function TermsPage() {
           <h2 className="site-h2">8. Changes</h2>
           <p>We may update these terms. If the changes are significant we’ll tell signed-in users in the app. Continuing to use {SITE.name} after an update means you accept the new terms.</p>
 
-          <h2 className="site-h2" id="privacy">Privacy Policy</h2>
-          <p><strong>What we collect.</strong> Your email address and password (stored hashed by our auth provider, Supabase), the lists and places you save, your subscription status, and the approximate location you search from. Guests’ search counts are tracked by a one-way hash of their IP address.</p>
-          <p><strong>How we use it.</strong> To run the service: sign you in, show restaurants near you, keep your lists, enforce limits and handle billing. We don’t sell your data or use it for advertising.</p>
-          <p><strong>Who we share it with.</strong> Only the providers that run {SITE.name}: Supabase (accounts and database), Stripe (payments) and Vercel (hosting).</p>
-          <p><strong>Cookies.</strong> We use cookies to keep you signed in, remember guest mode and your last location. No advertising cookies.</p>
-          <p><strong>Your choices.</strong> You can ask us to export or delete your account and data at any time by contacting us.</p>
+          <h2 className="site-h2">9. Privacy and contact</h2>
+          <p>How we handle your data is in the <Link href="/privacy">Privacy Policy</Link>. Questions about these terms: {OPERATOR.email}. Seller information required by Japanese law is on the <Link href="/legal">特定商取引法に基づく表記</Link> page.</p>
         </article>
       </main>
       <SiteFooter />

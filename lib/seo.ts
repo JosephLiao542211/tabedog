@@ -676,10 +676,10 @@ export function mapHref(opts: { city?: City; q?: string } = {}) {
   return `/auth/guest?next=${encodeURIComponent(next)}`;
 }
 
-/** Who runs the site, for /about and the 特定商取引法 disclosure. Fill these in before publishing. */
+/** Who runs the site, for /about and the 特定商取引法 disclosure. */
 export const OPERATOR = {
-  name: "TODO: operator's legal name",
-  email: "TODO: contact email",
+  name: "Joseph L",
+  email: "hi@jajabuilds.com",
   // Under the 特定商取引法 an individual seller may disclose address and phone on request instead of on the page.
   addressNote: "Disclosed without delay on request to the contact email above.",
   phoneNote: "Disclosed without delay on request to the contact email above.",
