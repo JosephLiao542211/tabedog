@@ -11,17 +11,25 @@
     "db:stop": "supabase stop",
     "db:status": "supabase status",
     "db:reset": "supabase db reset",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "postinstall": "node scripts/copy-maplibre-worker.mjs"
   },
   "dependencies": {
+    "@mdxeditor/editor": "^4.3.3",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",
     "@vercel/analytics": "^2.0.1",
     "cheerio": "^1.0.0",
-    "maplibre-gl": "^4.7.1",
+    "github-slugger": "^2.0.0",
+    "maplibre-gl": "^6.15.0",
     "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "stripe": "^23.0.0"
   },
   "devDependencies": {

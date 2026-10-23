@@ -2,9 +2,10 @@
 
 // The whole TabeDog UI: map, floating list, detail panel, search bar, filters, saved places.
 // MapLibre and its markers are driven imperatively through refs; everything the user sees is React state.
-import maplibregl, { type Map as MLMap, type Marker } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { Map as MLMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MAP_STYLE, tintMap } from "@/lib/map-style";
+import { MAP_STYLE, tintMap, workerUrl } from "@/lib/map-style";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { RANGES } from "@/lib/genres";
 import { haversine } from "@/lib/geo";
@@ -21,6 +22,8 @@ import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
 import { FilterIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
 import { fullHeight, sheetPx, useMobile, useSheet } from "./use-sheet";
+
+maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
 
 type Loc = { lat: number; lng: number; acc?: number | null; src?: string; at?: number };
 type Center = { lat: number; lng: number };

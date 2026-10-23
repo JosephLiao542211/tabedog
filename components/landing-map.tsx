@@ -4,11 +4,14 @@
 // central Tokyo behind the page; small non-interactive maps sit inside sections. Pins are real
 // top-rated restaurants near Shibuya, fetched once from /api/landing-spots and shared through context.
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import maplibregl, { type LngLatLike, type Map as MLMap, type Marker } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { LngLatLike, Map as MLMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MAP_STYLE, tintMap } from "@/lib/map-style";
+import { MAP_STYLE, tintMap, workerUrl } from "@/lib/map-style";
 import type { Spot } from "@/lib/landing";
 import { HEART_SVG } from "./icons";
+
+maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
 
 const SHIBUYA: LngLatLike = [139.7005, 35.6595];
 // a slow loop: Shibuya, Harajuku, Aoyama, Ebisu, Daikanyama and back

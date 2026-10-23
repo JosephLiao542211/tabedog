@@ -92,6 +92,17 @@ Scraped pages are cached in the `scrape_cache` table (service role only) with a 
 
 Cold searches take 2–4 s (one detail page per restaurant, 6 in parallel); warm ones are near-instant.
 
+## Blog
+
+`/blog` is a Notion-style blog; `/admin/blog` is the dashboard for writing it. Posts are markdown in the `posts` table, images go to the public `blog` Storage bucket (migration `20261023000000_blog.sql`).
+
+- **Who can write:** signed-in users whose confirmed email is in `BLOG_ADMIN_EMAILS` (defaults to `OPERATOR.email`). Everyone else gets a 404. Writes use the service role; RLS only lets the public read published posts.
+- **Editor:** [MDXEditor](https://mdxeditor.dev) (WYSIWYG with a raw-markdown toggle). Drag, paste or upload images (signed upload URLs, so no 4.5 MB function limit), or link any image URL. Tables, task lists, code blocks, footnotes all work.
+- **Rendering:** `react-markdown` + `remark-gfm`, `rehype-slug`, `rehype-autolink-headings`, `rehype-highlight`. An image-only paragraph becomes a captioned figure (the image title is the caption), several become a gallery, and a bare YouTube link becomes an embed. Raw HTML is not rendered.
+- **SEO, automatic:** title/description fallbacks, canonical, Open Graph/Twitter article tags, a generated social card (cover photo + title), `BlogPosting` + breadcrumb JSON-LD, sitemap entries with images, RSS at `/blog/rss.xml`, and a live checklist/score in the editor.
+- **Publishing:** pages are static (ISR, 1 h). Saving revalidates the blog, sitemap and feed right away. A future publish date schedules a post; it appears within the hour after that time.
+- **Topics:** edit `TOPICS` in `lib/blog.ts`.
+
 ## Deploy
 
 Works as a normal Next.js app on Vercel. Set the three env vars from `.env.example`, point them at a hosted Supabase project, and add your deployment URL to Supabase's redirect allow-list. On Vercel `/api/locate` uses the platform's geo headers, so no third-party lookup is needed.

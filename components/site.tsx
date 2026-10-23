@@ -38,6 +38,7 @@ export function SiteHeader() {
         <Link href="/#cuisines">Cuisines</Link>
         <Link href="/#premium">Premium</Link>
         <Link href="/#faq">FAQ</Link>
+        <Link href="/blog">Blog</Link>
       </nav>
       <div className="site-actions">
         <Link href="/login" className="site-link">Sign in</Link>
@@ -131,6 +132,7 @@ export function SiteFooter() {
             <li><Link href="/#faq">Tabelog ratings explained</Link></li>
             <li><Link href="/#how">How TabeDog works</Link></li>
             <li><a href="https://tabelog.com/en/" rel="nofollow noopener" target="_blank">Tabelog (official site)</a></li>
+            <li><Link href="/blog">The TabeDog Blog</Link></li>
             <li><Link href="/about">About TabeDog</Link></li>
             <li><Link href="/terms">Terms of service</Link></li>
             <li><Link href="/privacy">Privacy policy</Link></li>

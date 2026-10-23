@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeNext } from "@/lib/auth-utils";
 import { GUEST_COOKIE, GUEST_MAX_AGE } from "@/lib/guest";
+import { createClient } from "@/lib/supabase/server";
 
-function enterGuest(request: NextRequest, next: string | null) {
+async function enterGuest(request: NextRequest, next: string | null) {
   const res = NextResponse.redirect(new URL(safeNext(next), request.url), { status: 303 });
-  // signed-in users go straight to the app; only remember guest mode for people without a session
-  const signedIn = request.cookies.getAll().some((c) => c.name.startsWith("sb-") && c.name.includes("-auth-token"));
-  if (!signedIn) res.cookies.set(GUEST_COOKIE, "1", { path: "/", maxAge: GUEST_MAX_AGE, sameSite: "lax", httpOnly: true, secure: request.nextUrl.protocol === "https:" });
+  // signed-in users go straight to the app; only remember guest mode for people without a session.
+  // Validate the session like "/" does: a stale sb-*-auth-token cookie alone would skip the guest cookie and land them back on the landing page.
+  const { data: { user } } = await (await createClient()).auth.getUser();
+  if (!user) res.cookies.set(GUEST_COOKIE, "1", { path: "/", maxAge: GUEST_MAX_AGE, sameSite: "lax", httpOnly: true, secure: request.nextUrl.protocol === "https:" });
   return res;
 }
 
