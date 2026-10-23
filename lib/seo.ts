@@ -40,6 +40,8 @@ export type City = {
   name: string;
   ja: string;
   region: string;
+  tabelogArea: string; // Tabelog's area path for this city's rankings, e.g. "kyoto/A2601" (city, not prefecture)
+  center: { lat: number; lng: number }; // where "open on the map" drops you
   intro: string;
   tabelog: string;
   nightlife: string;
@@ -294,6 +296,7 @@ export const CUISINES: Cuisine[] = [
 export const CITIES: City[] = [
   {
     slug: "tokyo", name: "Tokyo", ja: "東京", region: "Kanto",
+    tabelogArea: "tokyo", center: { lat: 35.6812, lng: 139.7671 },
     intro: "Tokyo has more restaurants than any city on earth, around 150,000, and more Michelin stars than Paris, but the real guide locals use is Tabelog. The scores are what separate the 3.1 sushi counter by your hotel from the 3.7 one two blocks away that you would never find otherwise. Tokyo is also where Tabelog's grading is harshest: the sheer competition means a 3.5 here is a top-3% restaurant, and the city's 4.0-rated places are among the best meals in the world.\n\nEating well in Tokyo is less about picking the right restaurant than picking the right neighborhood and then trusting the numbers. Ginza for sushi and tempura, Shinjuku and Ikebukuro for ramen, Asakusa for old Edo cooking, Ebisu and Nakameguro for izakaya and bistros, Tsukiji for seafood breakfast. TabeDog puts all of it on one English map with hours and prices so you can decide in thirty seconds instead of an hour of translating.",
     tabelog: "Tokyo scores skew low because reviewers here have eaten everywhere. Treat 3.3 as good, 3.5 as excellent, and anything above 3.7 as worth crossing the city for. Tabelog's Hyakumeiten (Top 100) lists for Tokyo ramen, sushi, tonkatsu and yakitori are the most reliable shortlists in the city.",
     nightlife: "Shinjuku",
@@ -333,6 +336,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "osaka", name: "Osaka", ja: "大阪", region: "Kansai",
+    tabelogArea: "osaka", center: { lat: 34.7025, lng: 135.4959 },
     intro: "Osaka calls itself the nation's kitchen and its motto is kuidaore: eat until you drop. The food is louder, cheaper and more fun than Tokyo's: okonomiyaki and takoyaki griddled in front of you, kushikatsu skewers in Shinsekai, yakiniku in Korea town, and a ramen and spice-curry scene that is quietly one of the best in Japan. Dotonbori is the neon postcard, but the best-rated restaurants on Tabelog are a few streets away in Fukushima, Kitashinchi and Tenma, where locals actually eat.\n\nOsaka is also the city where ratings matter most for avoiding tourist traps. The Dotonbori strip is full of mediocre 3.0-rated griddles with huge signs; the 3.6 okonomiyaki shop with a line of office workers is in a side street nearby. TabeDog shows you both on the same map.",
     tabelog: "Osaka reviewers are generous with casual food and harsh with anything pretentious. A 3.5 okonomiyaki or kushikatsu shop is top tier; for sushi and kaiseki use Tokyo-level expectations. Kitashinchi is the fine-dining district and holds most of the city's 4.0+ restaurants.",
     nightlife: "Namba",
@@ -365,6 +369,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "kyoto", name: "Kyoto", ja: "京都", region: "Kansai",
+    tabelogArea: "kyoto/A2601", center: { lat: 35.0037, lng: 135.769 },
     intro: "Kyoto is the home of kaiseki, the multi-course seasonal meal at the top of Japanese cuisine, and the city's Tabelog washoku ranking is effectively the list of the best traditional restaurants in the country. But Kyoto also has one of Japan's best ramen districts (Ichijoji), the oldest kissaten culture, obanzai home cooking, and tofu restaurants in temple gardens. The challenge is that the famous restaurants are booked out and the streets around Gion and Kiyomizu are lined with tourist-priced places that locals never enter.\n\nTabelog's scores are the fix. The 3.3 obanzai counter in Nishiki Market with a line of locals is a better meal than the 3.0 'kaiseki' on the main drag for triple the price. TabeDog lays Kyoto out by neighborhood with prices and hours so you can plan the one big dinner and keep the rest cheap and excellent.",
     tabelog: "Kyoto holds more 4.0+ Japanese restaurants than anywhere outside Tokyo. For kaiseki, 3.7 and above is the top tier and lunch is the way in. For everything else, locals are tough graders and 3.4 is a solid recommendation. Many top places require a phone reservation; TabeDog shows the hours and whether the listing has online booking.",
     nightlife: "Kiyamachi",
@@ -396,6 +401,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "fukuoka", name: "Fukuoka", ja: "福岡", region: "Kyushu",
+    tabelogArea: "fukuoka/A4001", center: { lat: 33.5903, lng: 130.4017 },
     intro: "Fukuoka is the best food city in Japan per yen. It is the birthplace of tonkotsu ramen, the home of motsunabe and mizutaki hot pots, the yakitori capital by number of shops, and the last city in Japan with a real street-stall (yatai) culture, where you sit at a plastic counter on the Nakasu riverbank eating ramen and gyoza next to strangers. Hakata and Tenjin are the two centers, fifteen minutes apart on foot.\n\nFukuoka's restaurant scene is tight enough that Tabelog ratings work beautifully: the top-rated tonkotsu shops are all within a short walk of Hakata station, and the 3.6+ motsunabe houses are a short taxi ride from Tenjin. TabeDog shows which yatai and ramen shops are open right now, which matters in a city where the best bowls are eaten at midnight.",
     tabelog: "Fukuoka locals grade ramen hard because they eat it weekly: a tonkotsu shop at 3.5 is nationally famous. For motsunabe and mizutaki, 3.6+ is the top tier. Yatai stalls are listed on Tabelog too and the ratings are the only way to pick one.",
     nightlife: "Nakasu",
@@ -426,6 +432,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "sapporo", name: "Sapporo", ja: "札幌", region: "Hokkaido",
+    tabelogArea: "hokkaido/A0101", center: { lat: 43.058, lng: 141.353 },
     intro: "Sapporo eats like a northern port city: miso ramen was invented here, soup curry was invented here, and the seafood that comes off Hokkaido boats (crab, sea urchin, salmon roe, scallops) ends up in kaisendon bowls at Nijo Market and the Curb Market before 9 a.m. Jingisukan, lamb grilled on a domed iron plate, is the beer-hall meal. Susukino, the entertainment district, has ramen alleys open until dawn.\n\nSapporo's dining is compact: nearly everything worth eating is between Sapporo Station and Susukino, a twenty-minute walk. Tabelog ratings matter most for the seafood market stalls, where the tourist-facing ones near the entrance are the lowest rated, and for ramen, where the famous Ramen Yokocho alley is outscored by shops a few blocks away.",
     tabelog: "Hokkaido reviewers rate seafood with expert eyes: a 3.4 kaisendon shop is a strong pick. Miso ramen at 3.5+ is a destination bowl. Jingisukan halls are rated for atmosphere as much as lamb, so read the price band too.",
     nightlife: "Susukino",
@@ -454,6 +461,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "nagoya", name: "Nagoya", ja: "名古屋", region: "Chubu",
+    tabelogArea: "aichi/A2301", center: { lat: 35.1709, lng: 136.9083 },
     intro: "Nagoya has the most distinctive regional food in Japan, built on red haccho miso: miso katsu (tonkatsu with sweet miso sauce), miso nikomi udon simmered in a clay pot, hitsumabushi (grilled eel eaten three ways), tebasaki chicken wings, kishimen flat noodles and the kissaten 'morning service' that gives you free toast and egg with your coffee. Locals call it Nagoya-meshi and they are proud of it.\n\nThe food is clustered around Nagoya Station (Meieki), Sakae and the Osu shopping arcades. Tabelog matters because every Nagoya-meshi dish has one or two legendary originators and many imitators with bigger signs; the ratings tell you which is which.",
     tabelog: "Nagoya reviewers are loyal to the originators: the historic hitsumabushi and miso katsu houses sit around 3.6 to 3.8. For kissaten, 3.4 is a notable one. Tebasaki chains rate low on Tabelog but are still worth a plate.",
     nightlife: "Sakae",
@@ -483,6 +491,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "yokohama", name: "Yokohama", ja: "横浜", region: "Kanto",
+    tabelogArea: "kanagawa/A1401", center: { lat: 35.4437, lng: 139.638 },
     intro: "Yokohama is thirty minutes from Tokyo and has two things the capital does not: Japan's largest Chinatown, with over 200 restaurants, and iekei ramen, the thick pork-and-soy style with spinach and seaweed that was invented at a single shop near Shin-Yokohama and now has thousands of imitators. The Shin-Yokohama Ramen Museum collects regional ramen under one roof, and Noge, a drinking district by Sakuragicho, is one of the best izakaya streets in the Tokyo area.\n\nYokohama Chinatown is where Tabelog earns its keep: 200 restaurants, most mediocre, a dozen genuinely excellent, and the difference invisible from the street.",
     tabelog: "Chinatown restaurants are graded harshly; 3.5 there is a top-tier kitchen and 3.3 is a safe pick. Iekei ramen shops rate 3.3 to 3.6 and the originator family shops are easy to spot by score. Noge izakaya at 3.4+ are excellent.",
     nightlife: "Noge",
@@ -508,6 +517,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "kobe", name: "Kobe", ja: "神戸", region: "Kansai",
+    tabelogArea: "hyogo/A2801", center: { lat: 34.6946, lng: 135.1955 },
     intro: "Kobe is a port city with the most famous beef in the world, a Chinatown (Nankinmachi), a historic foreign quarter (Kitano) full of French and Indian restaurants, and the Nada sake district, which brews a quarter of Japan's sake. Kobe beef is the reason most visitors come, and it is where Tabelog is essential: only restaurants registered with the Kobe Beef Marketing Association serve the certified product, and the ratings separate them from the 'Kobe-style' steak shops.\n\nSannomiya is the center and everything is walkable from it: Nankinmachi to the west, Kitano up the hill, the harbor to the south. Lunch courses at the top teppanyaki counters cost about half of dinner for the same beef.",
     tabelog: "Kobe's steak ranking is the list to use: 3.6+ teppanyaki counters are serving certified beef with the ID certificate on display. For everything else Kobe graders are moderate; 3.4 is a good sign.",
     nightlife: "Sannomiya",
@@ -534,6 +544,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "hiroshima", name: "Hiroshima", ja: "広島", region: "Chugoku",
+    tabelogArea: "hiroshima/A3401", center: { lat: 34.3955, lng: 132.4596 },
     intro: "Hiroshima's food is okonomiyaki (layered, with noodles, nothing like Osaka's), oysters from the bay in every form, anago (sea eel) over rice on Miyajima, and a spicy tsukemen style that locals eat at heat level 20. Okonomimura, a building of two dozen okonomiyaki counters, is the famous stop; the shops locals rate highest are elsewhere in the city center and in Hatchobori.\n\nTabelog is useful in Hiroshima because the city gets a lot of day-trippers and the restaurants nearest the Peace Park and the station are priced for them. The 3.5+ okonomiyaki counters are a few streets away.",
     tabelog: "Okonomiyaki in Hiroshima is rated across a narrow band; 3.4 to 3.6 are the beloved counters and the differences are about the noodles and the griddle skill. Oyster restaurants at 3.5+ are excellent. Miyajima's anago-meshi houses sit around 3.5 to 3.7.",
     nightlife: "Nagarekawa",
@@ -560,6 +571,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "okinawa", name: "Okinawa", ja: "沖縄", region: "Okinawa",
+    tabelogArea: "okinawa", center: { lat: 26.215, lng: 127.685 },
     intro: "Okinawa's food is its own cuisine, closer to the Ryukyu Kingdom and China than to the mainland: Okinawa soba (thick wheat noodles in pork broth), goya champuru, rafute pork belly, sea grapes, taco rice from the American bases, and awamori, the island's rice spirit. Naha is the center, with Kokusai Dori as the tourist strip and the Makishi public market as the real one, and the resort coast up through Chatan and Onna has its own scene.\n\nTabelog ratings in Okinawa separate the family-run shokudo diners and soba shops from the Kokusai Dori restaurants priced for tour groups. The best Okinawa soba in Naha is in residential neighborhoods and costs ¥700.",
     tabelog: "Okinawan restaurants rarely score above 3.5; a 3.3 to 3.4 shokudo or soba shop is a local institution. Steakhouses from the American era are rated for nostalgia as much as beef. Many places are cash only, which TabeDog shows.",
     nightlife: "Kokusai Dori",
@@ -586,6 +598,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "kanazawa", name: "Kanazawa", ja: "金沢", region: "Hokuriku",
+    tabelogArea: "ishikawa/A1701", center: { lat: 36.5613, lng: 136.6562 },
     intro: "Kanazawa is the best seafood city in Japan that most visitors have never eaten in. The Sea of Japan coast delivers nodoguro (blackthroat seaperch), snow crab in winter, sweet shrimp and yellowtail to Omicho Market every morning, and the city's sushi counters serve fish of Tokyo quality at half the price with no waiting list. Kaga cuisine, the local kaiseki tradition built on the Maeda clan's wealth, is served in old samurai and geisha districts.\n\nOmicho Market is the center of everything and the kaisendon stalls inside it are rated with precision on Tabelog, which matters because the ones at the busiest entrances are not the ones locals queue at.",
     tabelog: "Kanazawa sushi counters at 3.6+ would be 3.9 in Tokyo; book them. Omicho kaisendon stalls at 3.4+ are excellent. Kaga kaiseki houses sit around 3.6 to 3.9 and lunch is the way in.",
     nightlife: "Katamachi",
@@ -612,6 +625,7 @@ export const CITIES: City[] = [
   },
   {
     slug: "nara", name: "Nara", ja: "奈良", region: "Kansai",
+    tabelogArea: "nara/A2901", center: { lat: 34.6843, lng: 135.8279 },
     intro: "Nara is a day trip from Kyoto or Osaka for most visitors, which means its food is overlooked. It should not be: Nara has kakinoha-zushi (mackerel sushi wrapped in persimmon leaves), chagayu (tea rice porridge), Miwa somen noodles, Yamato beef, and a dense cluster of excellent, inexpensive restaurants and kissaten in Naramachi, the old merchant district a ten-minute walk from the deer park.\n\nThe restaurants around Nara Park and Kintetsu-Nara station are priced for day-trippers; the Tabelog ratings point you into Naramachi's side streets where locals eat lunch for ¥1,200.",
     tabelog: "Nara graders are moderate: 3.4 is a strong recommendation for anything casual. The handful of kaiseki and sushi houses at 3.6+ are among the best in Kansai and reservations are easy compared with Kyoto.",
     nightlife: "Sanjo-dori",
@@ -648,6 +662,29 @@ export const cityUrl = (city: string) => `/${city}`;
 export const cityCuisineUrl = (city: string, cuisine: string) => `/${city}/${cuisine}`;
 export const cuisineUrl = (cuisine: string) => `/cuisine/${cuisine}`;
 
+/** "Open the map" link that works without an account: enters guest mode, then opens the app on this city/cuisine, best-rated first. */
+export function mapHref(opts: { city?: City; q?: string } = {}) {
+  const h = new URLSearchParams();
+  if (opts.q) h.set("q", opts.q);
+  if (opts.city) {
+    h.set("sort", "rating");
+    h.set("range", "C");
+    h.set("clat", String(opts.city.center.lat));
+    h.set("clng", String(opts.city.center.lng));
+  }
+  const next = h.size ? `/#${h}` : "/";
+  return `/auth/guest?next=${encodeURIComponent(next)}`;
+}
+
+/** Who runs the site, for /about and the 特定商取引法 disclosure. Fill these in before publishing. */
+export const OPERATOR = {
+  name: "TODO: operator's legal name",
+  email: "TODO: contact email",
+  // Under the 特定商取引法 an individual seller may disclose address and phone on request instead of on the page.
+  addressNote: "Disclosed without delay on request to the contact email above.",
+  phoneNote: "Disclosed without delay on request to the contact email above.",
+} as const;
+
 /** Every city × cuisine page that exists, for the sitemap, footer and static params. */
 export function allCityCuisinePages() {
   return CITIES.flatMap((city) => city.cuisines.map((cc) => ({ city, cuisine: cuisineBySlug(cc.cuisine)!, cc })));
@@ -681,12 +718,12 @@ export function cityCuisineFaqs(city: City, cuisine: Cuisine, cc: CityCuisine): 
   const areaList = areas.length > 2 ? `${areas.slice(0, -1).join(", ")} and ${areas[areas.length - 1]}` : areas.join(" and ");
   const faqs: Faq[] = [
     { q: `Where is the best ${cuisine.name.toLowerCase()} in ${city.name}?`, a: `${areaList} are where ${city.name}'s top-rated ${cuisine.name.toLowerCase()} clusters on Tabelog. ${cc.blurb.split(". ")[0]}. TabeDog shows every listing in those neighborhoods on one map, sorted by Tabelog score, distance or price.` },
-    { q: `How much does ${cuisine.name.toLowerCase()} cost in ${city.name}?`, a: `Lunch: ${cuisine.lunch}. Dinner: ${cuisine.dinner}. ${city.name === "Tokyo" ? "Tokyo runs at the top of those ranges." : `${city.name} generally sits at the lower end of those ranges compared with Tokyo.`} TabeDog shows each restaurant's lunch and dinner price band before you go.` },
+    { q: `How much does ${cuisine.name.toLowerCase()} cost in ${city.name}?`, a: `Lunch: ${cuisine.lunch}. Dinner: ${cuisine.dinner}. TabeDog shows each restaurant's lunch and dinner price band before you go.` },
     { q: `What is a good Tabelog score for ${cuisine.name.toLowerCase()} in ${city.name}?`, a: `${cuisine.score} ${city.tabelog}` },
-    { q: `Which neighborhood in ${city.name} should I stay in for ${cuisine.name.toLowerCase()}?`, a: `${areas[0]}. ${city.areas.find((x) => x.name.includes(areas[0]))?.note ? city.areas.find((x) => x.name.includes(areas[0]))!.note.charAt(0).toUpperCase() + city.areas.find((x) => x.name.includes(areas[0]))!.note.slice(1) + "." : `It has the densest cluster of top-rated ${cuisine.name.toLowerCase()} in ${city.name}.`} ${areas[1] ? `${areas[1]} is the alternative.` : ""}` },
+    { q: `Which neighborhood in ${city.name} should I stay in for ${cuisine.name.toLowerCase()}?`, a: `${areas[0]}. ${city.areas.find((x) => x.name.includes(areas[0]))?.note ? city.areas.find((x) => x.name.includes(areas[0]))!.note.charAt(0).toUpperCase() + city.areas.find((x) => x.name.includes(areas[0]))!.note.slice(1) + "." : `It is one of the main areas for ${cuisine.name.toLowerCase()} in ${city.name}.`} ${areas[1] ? `${areas[1]} is the alternative.` : ""}` },
   ];
   if (cuisine.lateNight) {
-    faqs.push({ q: `Where can I find ${cuisine.name.toLowerCase()} in ${city.name} late at night?`, a: `${city.nightlife} is ${city.name}'s late-night district and has the highest concentration of ${cuisine.name.toLowerCase()} open after 23:00. TabeDog shows opening hours for every listing and marks what is open right now, so you can filter to what is actually serving.` });
+    faqs.push({ q: `Where can I find ${cuisine.name.toLowerCase()} in ${city.name} late at night?`, a: `${city.nightlife} is ${city.name}'s main late-night district, so start there. TabeDog shows opening hours for every listing and marks what is open right now, so you can filter to what is actually serving.` });
   }
   faqs.push({ q: `Which ${cuisine.name.toLowerCase()} in ${city.name} accepts credit cards?`, a: `Many small ${cuisine.name.toLowerCase()} shops in Japan are cash only. TabeDog shows whether each restaurant accepts credit cards, IC cards or QR payment, pulled from its Tabelog listing, so you know before you sit down.` });
   return faqs;

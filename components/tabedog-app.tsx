@@ -15,7 +15,8 @@ import { can, type Plan } from "@/lib/plan";
 import type { Genre, LocateResponse, Restaurant, SearchResponse, SortKey } from "@/lib/types";
 import { RestaurantCard } from "./restaurant-card";
 import { ListsPanel, type ListDraft } from "./lists";
-import { ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, UpgradePrompt } from "./upgrade";
+import { GuestLimitPrompt, ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, UpgradePrompt } from "./upgrade";
+import { GUEST_LEFT_HEADER, GUEST_SEARCH_LIMIT } from "@/lib/guest";
 import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
 import { FilterIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
@@ -92,7 +93,7 @@ function circleGeo(lat: number, lng: number, radiusM: number, n = 64): GeoJSON.F
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coords] } };
 }
 
-export default function TabeDogApp({ email, userId, plan, billing }: { email: string; userId: string; plan: Plan; billing: boolean }) {
+export default function TabeDogApp({ email, userId, plan, billing, guest = false }: { email: string; userId: string; plan: Plan; billing: boolean; guest?: boolean }) {
   const hasLists = can(plan, "lists"); // saving lists is a premium feature; free users get an upgrade prompt instead
   const mapEl = useRef<HTMLDivElement>(null);
   const listEl = useRef<HTMLDivElement>(null);
@@ -147,6 +148,9 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
   const [upsell, setUpsell] = useState(false);                    // the "Premium feature" prompt for free users
   const [billingNote, setBillingNote] = useState<string | null>(null); // what happened when we came back from Stripe
   const closeUpsell = useCallback(() => setUpsell(false), []);
+  const [guestLeft, setGuestLeft] = useState(GUEST_SEARCH_LIMIT);  // guests: searches left this hour
+  const [guestWall, setGuestWall] = useState<number | null>(null);  // guests: out of searches, until this time (ms)
+  const closeGuestWall = useCallback(() => setGuestWall(null), []);
 
   const setFilters = (f: Filters) => { E.filters = f; setFiltersState(f); };
   const setCenter = (c: Center | null) => { E.center = c; };
@@ -297,6 +301,15 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
       if (f.open) p.set("open", "1");
       const res = await fetch("/api/search?" + p);
       if (res.status === 401) { window.location.assign("/login"); return; }
+      const left = res.headers.get(GUEST_LEFT_HEADER);
+      if (left != null) setGuestLeft(Number(left));
+      if (res.status === 429 && guest) {
+        const { resetAt } = (await res.json()) as { resetAt: number };
+        if (my !== E.reqId) return;
+        setGuestWall(resetAt);
+        setCount("Out of guest searches for this hour");
+        return;
+      }
       const data = (await res.json()) as SearchResponse & { error?: string };
       if (my !== E.reqId) return;
       if (data.error) throw new Error(data.error);
@@ -618,8 +631,8 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
               {nFilters > 0 && <i className="badge">{nFilters}</i>}
             </button>
             <button type="button" className={"icon" + (panel === "sort" ? " open" : "")} aria-label="Sort" title="Sort" onClick={() => togglePanel("sort")}><SortIcon /></button>
-            <button type="button" className={"icon" + (panel === "account" ? " open" : "")} aria-label="Account" title={email} onClick={() => togglePanel("account")}>
-              <span className="initial">{(email[0] || "?")}</span>
+            <button type="button" className={"icon" + (panel === "account" ? " open" : "")} aria-label="Account" title={guest ? "Guest" : email} onClick={() => togglePanel("account")}>
+              <span className="initial">{guest ? "G" : (email[0] || "?")}</span>
             </button>
           </div>
           {viewing ? (
@@ -634,7 +647,19 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
 
         {panel === "filter" && <FilterPanel f={filters} onChange={changeFilters} onReset={resetFilters} />}
         {panel === "sort" && <SortPanel value={filters.sort} onChange={(s) => { setPanel(null); changeFilters({ sort: s }); }} />}
-        {panel === "account" && (
+        {panel === "account" && guest && (
+          <div className="panel account">
+            <p className="sub">Browsing as</p>
+            <p className="p1">Guest</p>
+            <p className="p2">{guestLeft} of {GUEST_SEARCH_LIMIT} guest searches left this hour. Create a free account for unlimited searches.</p>
+            <a href="/login" className="btn">Sign in or create account</a>
+            <form action="/auth/signout" method="post" className="foot">
+              <span className="sub">Nothing is saved in guest mode.</span>
+              <button type="submit" className="chip"><SignOutIcon />Leave guest mode</button>
+            </form>
+          </div>
+        )}
+        {panel === "account" && !guest && (
           <div className="panel account">
             <p className="sub">Signed in as</p>
             <p className="p1" title={email}>{email}</p>
@@ -668,7 +693,9 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
         </div>
       </aside>
 
-      {detail && <DetailPanel key={detail.id} r={detail} lists={lists} locked={!hasLists} billing={billing} mobile={mobile} onToggleList={(l) => toggleInList(l, detail)} onCreateList={(d) => newList(d, detail)} onClose={closeDetail} />}
+      {detail && <DetailPanel key={detail.id} r={detail} lists={lists} locked={!hasLists} billing={billing} guest={guest} mobile={mobile} onToggleList={(l) => toggleInList(l, detail)} onCreateList={(d) => newList(d, detail)} onClose={closeDetail} />}
+
+      {guestWall != null && <GuestLimitPrompt resetAt={guestWall} billing={billing} onClose={closeGuestWall} />}
 
       <div id="ctl" className="float">
         <button type="button" aria-label="Zoom in" onClick={() => E.map?.zoomIn()}><ZoomInIcon /></button>
@@ -704,7 +731,7 @@ export default function TabeDogApp({ email, userId, plan, billing }: { email: st
             {lists.length > 1 && <i className="badge">{lists.length}</i>}
             {!hasLists && <i className="lock" aria-hidden="true" />}
           </button>
-          {upsell && <UpgradePrompt feature="lists" id="listsUpsell" billing={billing} onClose={closeUpsell} />}
+          {upsell && <UpgradePrompt feature="lists" id="listsUpsell" billing={billing} guest={guest} onClose={closeUpsell} />}
           {showLists && hasLists && (
             <ListsPanel lists={lists} viewing={viewList} onOpen={openList}
               onCreate={(d) => newList(d)} onUpdate={editList} onDelete={removeList} />

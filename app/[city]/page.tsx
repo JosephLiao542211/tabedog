@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CITIES, CITY_SLUGS, SITE, cityBySlug, cityCuisine, cityCuisineUrl, cityFaqs, cityUrl, cuisineBySlug, cuisineUrl } from "@/lib/seo";
+import { CITIES, CITY_SLUGS, SITE, cityBySlug, cityCuisine, cityCuisineUrl, cityFaqs, cityUrl, cuisineBySlug, cuisineUrl, mapHref } from "@/lib/seo";
 import { Breadcrumbs, CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, breadcrumbSchema, faqSchema } from "@/components/site";
+import { TopRestaurants, rankingSchema } from "@/components/top-restaurants";
+import { topRated } from "@/lib/rankings";
 
 type Props = { params: Promise<{ city: string }> };
 
 export const dynamicParams = false;
+export const revalidate = 86400; // the Tabelog ranking refreshes daily
 export function generateStaticParams() {
   return CITY_SLUGS.map((city) => ({ city }));
 }
@@ -32,10 +35,12 @@ export default async function CityPage({ params }: Props) {
   const others = CITIES.filter((c) => c.slug !== city.slug);
   const crumbs = [{ name: city.name, url: cityUrl(city.slug) }];
   const [intro1, intro2] = city.intro.split("\n\n");
+  const ranking = await topRated(city.tabelogArea, "", 20);
+  const map = mapHref({ city });
 
   return (
     <div className="site">
-      <JsonLd data={[breadcrumbSchema(crumbs), faqSchema(faqs), {
+      <JsonLd data={[breadcrumbSchema(crumbs), faqSchema(faqs), ...(ranking.items.length ? [rankingSchema(ranking, `Top-rated restaurants in ${city.name} on Tabelog`, cityUrl(city.slug), city.name)] : []), {
         "@context": "https://schema.org",
         "@type": "WebPage",
         name: `Best Restaurants in ${city.name}`,
@@ -53,9 +58,15 @@ export default async function CityPage({ params }: Props) {
           <p className="site-lead">{intro1}</p>
           <p className="p1 site-lead2">{intro2}</p>
           <div className="site-hero-actions">
-            <Link href="/login" className="site-btn site-btn-lg">Open {city.name} on the map</Link>
+            <a href={map} className="site-btn site-btn-lg">Open {city.name} on the map</a>
           </div>
         </section>
+
+        <TopRestaurants
+          ranking={ranking}
+          title={`The ${ranking.items.length} top-rated restaurants in ${city.name} on Tabelog`}
+          intro={`${city.name}'s highest-scoring restaurants across every cuisine right now. Most need a reservation; the cuisine pages below go deeper, including places you can walk into.`}
+        />
 
         <section className="site-section">
           <h2 className="site-h2">Where to eat in {city.name}, by neighborhood</h2>
@@ -105,6 +116,7 @@ export default async function CityPage({ params }: Props) {
           title={`See every restaurant in ${city.name}, rated.`}
           body={`Open the map, zoom into ${city.areas[0].name} or anywhere else in ${city.name}, and filter by Tabelog score, cuisine, price and what's open now.`}
           label={`Open ${city.name} on the map`}
+          href={map}
         />
 
         <section className="site-section">

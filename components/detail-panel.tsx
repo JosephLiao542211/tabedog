@@ -71,8 +71,8 @@ function Reviews({ r }: { r: Restaurant }) {
 // Remount with key={r.id} so the gallery index and scroll position reset per restaurant.
 // `locked`: the user is on the free plan, so the heart and "add to list" open a Premium prompt instead.
 // `mobile`: the panel is a bottom sheet; drag the photo to resize it, pull it right down to close.
-export function DetailPanel({ r, lists, locked = false, billing = false, mobile = false, onToggleList, onCreateList, onClose }: {
-  r: Restaurant; lists: SavedList[]; locked?: boolean; billing?: boolean; mobile?: boolean; onToggleList: (l: SavedList) => void; onCreateList: (d: ListDraft) => void; onClose: () => void;
+export function DetailPanel({ r, lists, locked = false, billing = false, guest = false, mobile = false, onToggleList, onCreateList, onClose }: {
+  r: Restaurant; lists: SavedList[]; locked?: boolean; billing?: boolean; guest?: boolean; mobile?: boolean; onToggleList: (l: SavedList) => void; onCreateList: (d: ListDraft) => void; onClose: () => void;
 }) {
   const galleryEl = useRef<HTMLDivElement>(null);
   const factsEl = useRef<HTMLDivElement>(null);
@@ -118,7 +118,7 @@ export function DetailPanel({ r, lists, locked = false, billing = false, mobile 
         <button id="closeDetail" className="gallery-btn" aria-label="Close" onClick={onClose}><XIcon /></button>
       </div>
       {picking && !locked && <AddToListMenu lists={lists} restaurantId={r.id} onToggle={onToggleList} onCreate={onCreateList} onClose={closePick} />}
-      {upsell && locked && <UpgradePrompt feature="lists" id="detailUpsell" billing={billing} onClose={closeUpsell} />}
+      {upsell && locked && <UpgradePrompt feature="lists" id="detailUpsell" billing={billing} guest={guest} onClose={closeUpsell} />}
       <div id="facts" ref={factsEl}>
         <h2>{r.name}</h2>
         <p className="p1"><span className="star">★ {r.rating ?? "–"}</span> · {r.reviews.toLocaleString()} reviews{r.distM != null ? ` · ${fmtDist(r.distM)} away` : ""}</p>

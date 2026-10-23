@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getPlan } from "@/lib/plan-server";
 import { billingEnabled } from "@/lib/stripe";
 import { AppLoader } from "@/components/app-loader";
 import { Landing } from "@/components/landing";
 import { SITE } from "@/lib/seo";
+import { GUEST_COOKIE } from "@/lib/guest";
 
 export const metadata: Metadata = {
   title: { absolute: `${SITE.name}: Tabelog in English | The #1 App for Eating Like a Local in Japan` },
@@ -16,7 +18,10 @@ export const metadata: Metadata = {
 export default async function Home() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return <Landing />;
+  if (!user) {
+    const guest = (await cookies()).get(GUEST_COOKIE)?.value === "1";
+    return guest ? <AppLoader email="" userId="" plan="free" billing={billingEnabled()} guest /> : <Landing />;
+  }
   const plan = await getPlan(supabase, user.id);
   return <AppLoader email={user.email ?? ""} userId={user.id} plan={plan} billing={billingEnabled()} />;
 }

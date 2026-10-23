@@ -15,6 +15,6 @@ const TabeDogApp = dynamic(() => import("./tabedog-app"), {
   ),
 });
 
-export function AppLoader(props: { email: string; userId: string; plan: Plan; billing: boolean }) {
+export function AppLoader(props: { email: string; userId: string; plan: Plan; billing: boolean; guest?: boolean }) {
   return <TabeDogApp {...props} />;
 }

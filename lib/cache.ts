@@ -78,3 +78,17 @@ export async function cacheStats() {
   const { count, error } = await client.from(TABLE).select("key", { count: "exact", head: true }).gte("expires_at", new Date().toISOString());
   return { backend: "supabase", keys: count ?? 0, memoryKeys: store.mem.size, ...(error ? { error: error.message } : {}) };
 }
+
+/** Raw read from the same store, skipping the memory layer when the table is there, so every instance sees one value (counters). */
+export async function kvGet<T>(key: string): Promise<T | undefined> {
+  const client = db();
+  if (!client) return memGet(key) as T | undefined;
+  return (await dbGet(client, key)) as T | undefined;
+}
+
+/** Raw write to the same store, for `ttlSec` (not capped like the memory copies of cached()). */
+export async function kvSet(key: string, value: unknown, ttlSec: number) {
+  const client = db();
+  if (!client) { store.mem.set(key, { v: value, exp: Date.now() + ttlSec * 1000 }); return; }
+  await dbSet(client, key, value, ttlSec);
+}

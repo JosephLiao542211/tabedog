@@ -1,0 +1,230 @@
+{
+  "summary": {
+    "health_score": 60,
+    "business_type": "Consumer web app / travel food discovery (programmatic SEO)",
+    "top_findings": [
+      "70 city×cuisine pages name no restaurants (doorway risk, SERP mismatch)",
+      "All CTAs dead-end at /login; guest mode not deployed",
+      "No privacy/terms/about/contact/特商法 pages live despite paid subscription",
+      "Proxy redirects all unknown paths to /login (no 404s)",
+      "Trademark/confusion risk TabeDog vs Tabelog; unsupported #1 claims"
+    ],
+    "quick_wins": [
+      "301 www to apex",
+      "Delete 37 MB unused originals in public/",
+      "Per-page OG images + twitter metadata",
+      "Fix template bugs (doubled city names, heading grammar)",
+      "Fix BreadcrumbList, PNG logo, Article dates"
+    ]
+  },
+  "categories": [
+    {
+      "name": "Technical SEO",
+      "score": 72,
+      "what_works": [
+        "103/103 URLs 200 with self canonicals",
+        "Full SSR content",
+        "Single-hop redirects"
+      ],
+      "findings": [
+        {
+          "title": "Homepage dynamic/no-store",
+          "severity": "High",
+          "description": "app/page.tsx reads cookies and getUser()",
+          "recommendation": "Split landing from app shell, rewrite in proxy"
+        },
+        {
+          "title": "Unknown paths 307 to /login",
+          "severity": "High",
+          "description": "lib/supabase/proxy.ts gates all non-allowlisted paths",
+          "recommendation": "Gate only app/API routes"
+        },
+        {
+          "title": "www not redirected",
+          "severity": "Medium",
+          "description": "www.tabedog.com 200",
+          "recommendation": "308 to apex"
+        }
+      ]
+    },
+    {
+      "name": "Content Quality",
+      "score": 48,
+      "what_works": [
+        "Cuisine hubs 86% unique",
+        "Readability grade 8-9"
+      ],
+      "findings": [
+        {
+          "title": "Doorway-like city×cuisine pages",
+          "severity": "Critical",
+          "description": "~7% unique copy, no restaurants named",
+          "recommendation": "Add restaurant lists or consolidate/noindex"
+        },
+        {
+          "title": "No trust/legal pages",
+          "severity": "Critical",
+          "description": "/terms /about /privacy redirect to login",
+          "recommendation": "Publish them"
+        },
+        {
+          "title": "Factual errors and unsupported superlatives",
+          "severity": "Medium",
+          "description": "See findings/content.md",
+          "recommendation": "Correct and source"
+        }
+      ]
+    },
+    {
+      "name": "On-Page SEO",
+      "score": 60,
+      "what_works": [
+        "Unique titles and single H1"
+      ],
+      "findings": [
+        {
+          "title": "Titles/descriptions too long and templated",
+          "severity": "High",
+          "description": "Titles 62-81 chars, descs 161-334",
+          "recommendation": "≤60 / ~150 chars, de-template"
+        },
+        {
+          "title": "Cannibalization on 'Tabelog English'",
+          "severity": "High",
+          "description": "83 titles target it",
+          "recommendation": "Dedicated /tabelog-english page"
+        }
+      ]
+    },
+    {
+      "name": "Schema / Structured Data",
+      "score": 65,
+      "what_works": [
+        "Valid JSON-LD on all pages"
+      ],
+      "findings": [
+        {
+          "title": "Broken BreadcrumbList",
+          "severity": "Medium",
+          "description": "No Home root; /#cuisines fragment",
+          "recommendation": "Home > City > Cuisine"
+        },
+        {
+          "title": "SVG Organization logo, no sameAs",
+          "severity": "Medium",
+          "description": "",
+          "recommendation": "PNG ≥112px, add sameAs"
+        }
+      ]
+    },
+    {
+      "name": "Performance (CWV)",
+      "score": 65,
+      "what_works": [
+        "Hubs CDN-cached, TTFB ~0.2s"
+      ],
+      "findings": [
+        {
+          "title": "maplibre in initial JS on /",
+          "severity": "High",
+          "description": "214 KB brotli chunk",
+          "recommendation": "Dynamic import on visibility"
+        }
+      ]
+    },
+    {
+      "name": "AI Search Readiness",
+      "score": 56,
+      "what_works": [
+        "All AI crawlers allowed and served SSR"
+      ],
+      "findings": [
+        {
+          "title": "No citable named entities",
+          "severity": "High",
+          "description": "Hubs lack restaurants",
+          "recommendation": "Add ItemList restaurant lists"
+        },
+        {
+          "title": "Zero brand mentions",
+          "severity": "High",
+          "description": "Domain 3 days old",
+          "recommendation": "Launch/community presence then sameAs"
+        }
+      ]
+    },
+    {
+      "name": "Images",
+      "score": 60,
+      "what_works": [
+        "Descriptive alt on informative images"
+      ],
+      "findings": [
+        {
+          "title": "37 MB unused originals public",
+          "severity": "High",
+          "description": "public/*.jpg",
+          "recommendation": "Delete"
+        },
+        {
+          "title": "No og:image on 102/103 pages",
+          "severity": "High",
+          "description": "openGraph override",
+          "recommendation": "Per-route opengraph-image.tsx"
+        }
+      ]
+    }
+  ],
+  "action_plan": {
+    "phases": [
+      {
+        "name": "Phase 1: Critical Fixes",
+        "timeframe": "Week 1",
+        "items": [
+          "Deploy uncommitted terms/guest/proxy",
+          "Proxy 404 fix",
+          "Legal/trust pages",
+          "Decide on thin pages",
+          "Legal review of brand"
+        ]
+      },
+      {
+        "name": "Phase 2: High-Impact Improvements",
+        "timeframe": "Weeks 2-3",
+        "items": [
+          "Restaurant lists on hubs",
+          "Guest-map CTAs",
+          "Static homepage + lazy maplibre",
+          "Per-page OG",
+          "Title/desc rewrite",
+          "Template bug fixes",
+          "www redirect, delete large files"
+        ]
+      },
+      {
+        "name": "Phase 3: Content & Authority",
+        "timeframe": "Month 2",
+        "items": [
+          "Schema fixes",
+          "/tabelog-score, /tabelog-english, apps comparison",
+          "Hub images",
+          "Original data study",
+          "Brand mentions"
+        ]
+      },
+      {
+        "name": "Phase 4: Monitoring & Iteration",
+        "timeframe": "Ongoing",
+        "items": [
+          "GSC/Bing setup",
+          "PSI with API key",
+          "Area pages and filters"
+        ]
+      }
+    ]
+  },
+  "artifacts": {
+    "findings_dir": "findings/",
+    "screenshots_dir": "screenshots/"
+  }
+}

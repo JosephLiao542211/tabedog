@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SITE, allCityCuisinePages, citiesForCuisine, cityBySlug, cityCuisine, cityCuisineFaqs, cityCuisineUrl, cityUrl, cuisineBySlug, cuisineUrl } from "@/lib/seo";
+import { SITE, allCityCuisinePages, mapHref, citiesForCuisine, cityBySlug, cityCuisine, cityCuisineFaqs, cityCuisineUrl, cityUrl, cuisineBySlug, cuisineUrl } from "@/lib/seo";
 import { Breadcrumbs, CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, breadcrumbSchema, faqSchema } from "@/components/site";
+import { TopRestaurants, rankingSchema } from "@/components/top-restaurants";
+import { topRated } from "@/lib/rankings";
 
 type Props = { params: Promise<{ city: string; cuisine: string }> };
 
 export const dynamicParams = false;
+export const revalidate = 86400; // the Tabelog ranking refreshes daily
 export function generateStaticParams() {
   return allCityCuisinePages().map(({ city, cuisine }) => ({ city: city.slug, cuisine: cuisine.slug }));
 }
@@ -40,11 +43,12 @@ export default async function CityCuisinePage({ params }: Props) {
   const siblings = city.cuisines.filter((x) => x.cuisine !== cuisine.slug);
   const elsewhere = citiesForCuisine(cuisine.slug).filter((c) => c.slug !== city.slug);
   const lower = cuisine.name.toLowerCase();
-  const searches = [...cc.longtail, ...cuisine.longtail.slice(0, 3)];
+  const ranking = await topRated(city.tabelogArea, cuisine.code);
+  const map = mapHref({ city, q: cuisine.code });
 
   return (
     <div className="site">
-      <JsonLd data={[breadcrumbSchema(crumbs), faqSchema(faqs), {
+      <JsonLd data={[breadcrumbSchema(crumbs), faqSchema(faqs), ...(ranking.items.length ? [rankingSchema(ranking, `Top-rated ${lower} in ${city.name} on Tabelog`, url, city.name)] : []), {
         "@context": "https://schema.org",
         "@type": "Article",
         headline: `Best ${cuisine.name} in ${city.name}`,
@@ -63,9 +67,15 @@ export default async function CityCuisinePage({ params }: Props) {
           <h1>Best {lower} in {city.name}</h1>
           <p className="site-lead">{cc.blurb}</p>
           <div className="site-hero-actions">
-            <Link href="/login" className="site-btn site-btn-lg">Show {lower} near me in {city.name}</Link>
+            <a href={map} className="site-btn site-btn-lg">Open {lower} in {city.name} on the map</a>
           </div>
         </section>
+
+        <TopRestaurants
+          ranking={ranking}
+          title={`Top-rated ${lower} in ${city.name} on Tabelog`}
+          intro={`The ${ranking.items.length} highest-scoring ${lower} restaurants in ${city.name} right now, by Tabelog score. Open the map to see where each one is, its hours and whether it takes cards.`}
+        />
 
         <section className="site-section">
           <h2 className="site-h2">Where to find the best {lower} in {city.name}</h2>
@@ -89,7 +99,6 @@ export default async function CityCuisinePage({ params }: Props) {
               <dt>Dinner</dt><dd>{cuisine.dinner}</dd>
             </dl>
             <p className="p2">
-              {city.name === "Tokyo" ? "Tokyo sits at the top of those ranges." : `${city.name} usually sits toward the lower end of those ranges compared with Tokyo.`}{" "}
               <Link href={cuisineUrl(cuisine.slug)}>How to order {lower}, reservations and etiquette</Link> are on the {cuisine.name} guide.
             </p>
           </div>
@@ -102,17 +111,12 @@ export default async function CityCuisinePage({ params }: Props) {
 
         <FaqSection title={`${cuisine.name} in ${city.name}: questions people ask`} faqs={faqs} />
 
-        <section className="site-section">
-          <h2 className="site-h2">Related searches</h2>
-          <ul className="site-tags">
-            {searches.map((s) => <li key={s}><span>{s} {city.name.toLowerCase()}</span></li>)}
-          </ul>
-        </section>
 
         <CtaBand
           title={`Every ${lower} shop in ${city.name}, on one map.`}
           body={`TabeDog shows all of ${city.name}'s ${lower} with Tabelog scores, hours, prices and payment methods in English. Filter to what's open now.`}
           label={`Open ${lower} in ${city.name}`}
+          href={map}
         />
 
         <section className="site-section">

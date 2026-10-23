@@ -77,52 +77,20 @@ export function Landing() {
               Find the places locals queue for and skip the tourist traps.
             </p>
             <div className="ld-actions">
-              <Link href="/login" className="site-btn site-btn-lg">Find restaurants near me</Link>
+              <a href={mapHref()} className="site-btn site-btn-lg">Find restaurants near me</a>
               <Link href="/tokyo" className="site-btn site-btn-ghost site-btn-lg">Browse Tokyo</Link>
             </div>
             <p className="ld-meta"><span>Free to use</span><span>Every restaurant in Japan</span><span>Hours, prices and payment in English</span></p>
             <MiniMap variant="rating" count={40} zoom={14.4} className="ld-hero-map">
-              <Link href="/login" className="ld-hero-open" aria-label="Open the map">
+              <a href={mapHref()} className="ld-hero-open" aria-label="Open the map">
                 <span className="ld-hero-open-text">
                   <span className="ld-hero-open-title"><MapIcon size={30} /> Open the map</span>
                   <span className="ld-hero-open-sub">Sit. Stay. We&apos;ll fetch the best bowl in the neighborhood.</span>
                 </span>
-              </Link>
+              </a>
               <div className="ld-hero-search" aria-hidden="true"><SearchIcon /><span>Ramen near Shibuya</span></div>
               <SpotCard />
             </MiniMap>
-          </section>
-
-          {/* ---- why Tabelog ---- */}
-          <section className="ld-sheet" id="why">
-            <header className="ld-head">
-              <h2 className="ld-h2">Why Tabelog scores beat Google ratings in Japan</h2>
-              <p className="ld-sub">Tabelog runs 1 to 5, but almost nothing scores above 4. That is the point: a 0.2 gap on Tabelog is a real difference. The same gap on Google is noise.</p>
-            </header>
-            <div className="ld-scale" role="img" aria-label="Tabelog rating scale: 3.0 average, 3.5 top 5 percent with a queue, 3.7 a destination, 4.0 one of the best in Japan">
-              <div className="ld-scale-bar" />
-              <div className="ld-scale-tick" style={{ left: "8%" }}><b>3.0</b><span>The average restaurant</span></div>
-              <div className="ld-scale-tick hot" style={{ left: "50%" }}><i><PawIcon size={14} /></i><b>3.5</b><span>Top 5%. Expect a queue</span></div>
-              <div className="ld-scale-tick" style={{ left: "70%" }}><b>3.7</b><span>Worth crossing the city</span></div>
-              <div className="ld-scale-tick" style={{ left: "92%" }}><b>4.0</b><span>One of the best in Japan</span></div>
-            </div>
-            <div className="ld-cards">
-              <article className="ld-card">
-                <span className="ld-ic"><ScaleIcon /></span>
-                <h3>The scale is harsh on purpose</h3>
-                <p>The average restaurant sits near 3.1. A 3.5 means a queue, a 3.7 is a destination, a 4.0 is one of the best meals in the country.</p>
-              </article>
-              <article className="ld-card">
-                <span className="ld-ic"><UsersIcon /></span>
-                <h3>Reviewers are weighted</h3>
-                <p>Tabelog weights reviewers by their track record, so a tourist&apos;s five stars for the hotel sushi bar does not move the number.</p>
-              </article>
-              <article className="ld-card">
-                <span className="ld-ic"><PawIcon /></span>
-                <h3>Locals choose by it</h3>
-                <p>Japanese diners pick restaurants by Tabelog score and the Hyakumeiten (Top 100) lists. Google&apos;s 4.0 to 4.5 band cannot tell a great ramen shop from an average one.</p>
-              </article>
-            </div>
           </section>
 
           {/* ---- the best app: one row of map and photos, three short points ---- */}
@@ -169,6 +137,38 @@ export function Landing() {
                 </table>
               </div>
             </details>
+          </section>
+
+          {/* ---- why Tabelog ---- */}
+          <section className="ld-sheet" id="why">
+            <header className="ld-head">
+              <h2 className="ld-h2">Why Tabelog scores beat Google ratings in Japan</h2>
+              <p className="ld-sub">Tabelog runs 1 to 5, but almost nothing scores above 4. That is the point: a 0.2 gap on Tabelog is a real difference. The same gap on Google is noise.</p>
+            </header>
+            <div className="ld-scale" role="img" aria-label="Tabelog rating scale: 3.0 average, 3.5 top 5 percent with a queue, 3.7 a destination, 4.0 one of the best in Japan">
+              <div className="ld-scale-bar" />
+              <div className="ld-scale-tick" style={{ left: "8%" }}><b>3.0</b><span>The average restaurant</span></div>
+              <div className="ld-scale-tick hot" style={{ left: "50%" }}><i><PawIcon size={14} /></i><b>3.5</b><span>Top 5%. Expect a queue</span></div>
+              <div className="ld-scale-tick" style={{ left: "70%" }}><b>3.7</b><span>Worth crossing the city</span></div>
+              <div className="ld-scale-tick" style={{ left: "92%" }}><b>4.0</b><span>One of the best in Japan</span></div>
+            </div>
+            <div className="ld-cards">
+              <article className="ld-card">
+                <span className="ld-ic"><ScaleIcon /></span>
+                <h3>The scale is harsh on purpose</h3>
+                <p>The average restaurant sits near 3.1. A 3.5 means a queue, a 3.7 is a destination, a 4.0 is one of the best meals in the country.</p>
+              </article>
+              <article className="ld-card">
+                <span className="ld-ic"><UsersIcon /></span>
+                <h3>Reviewers are weighted</h3>
+                <p>Tabelog weights reviewers by their track record, so a tourist&apos;s five stars for the hotel sushi bar does not move the number.</p>
+              </article>
+              <article className="ld-card">
+                <span className="ld-ic"><PawIcon /></span>
+                <h3>Locals choose by it</h3>
+                <p>Japanese diners pick restaurants by Tabelog score and the Hyakumeiten (Top 100) lists. Google&apos;s 4.0 to 4.5 band cannot tell a great ramen shop from an average one.</p>
+              </article>
+            </div>
           </section>
 
           {/* ---- premium: each card shows the feature instead of describing it ---- */}
@@ -218,7 +218,7 @@ export function Landing() {
             </div>
             <div className="ld-premium-foot">
               <p><strong>¥{SITE.premiumYen} a month, cancel any time.</strong> Ratings, filters, hours, prices and payment methods stay free for everyone.</p>
-              <Link href="/login" className="site-btn site-btn-lg"><SparkIcon size={14} /> Start with the free map</Link>
+              <a href={mapHref()} className="site-btn site-btn-lg"><SparkIcon size={14} /> Start with the free map</a>
             </div>
           </section>
 
@@ -234,7 +234,7 @@ export function Landing() {
                 <li><span className="ld-step-ic"><FilterIcon /></span><div><h3>Filter like a local</h3><p>Cuisine, price range, Tabelog score, open now, takes credit cards. Sort by rating, distance or price.</p></div></li>
                 <li><span className="ld-step-ic"><GlobeIcon /></span><div><h3>Read it in English</h3><p>Name, address, hours, lunch and dinner prices and payment methods, with a link to the Tabelog page for photos and reviews.</p></div></li>
               </ol>
-              <Link href="/login" className="site-btn site-btn-lg">Open the map</Link>
+              <a href={mapHref()} className="site-btn site-btn-lg">Open the map</a>
             </div>
           </section>
 

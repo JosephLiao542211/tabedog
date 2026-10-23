@@ -1,14 +1,18 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { CITY_SLUGS } from "@/lib/seo";
+import { GUEST_COOKIE } from "@/lib/guest";
 
 const PUBLIC_PATHS = [
   /^\/$/, /^\/login$/, /^\/auth\//,
   /^\/api\/billing\/webhook$/, // Stripe calls the webhook without a session
   /^\/api\/landing-spots$/, // the pins behind the public landing page: one cached search, no user input
-  /^\/sitemap\.xml$/, /^\/robots\.txt$/, /^\/opengraph-image/, /^\/twitter-image/,
+  /^\/terms$/, /^\/sitemap\.xml$/, /^\/robots\.txt$/, /^\/opengraph-image/, /^\/twitter-image/,
   /^\/cuisine\/[a-z-]+$/, new RegExp(`^/(${CITY_SLUGS.join("|")})(/[a-z-]+)?$`), // public SEO hub pages
 ];
+
+// what a guest (no account, "Continue as guest") may reach besides the public pages: the map's read-only APIs
+const GUEST_PATHS = [/^\/api\/(search|genres|reviews|locate)$/];
 
 /** Refresh the Supabase session cookie on every request and gate everything but the public pages behind sign-in. */
 export async function updateSession(request: NextRequest) {
@@ -27,7 +31,8 @@ export async function updateSession(request: NextRequest) {
   // getUser() validates the token with Supabase Auth; do not swap it for getSession() here.
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname, search } = request.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((re) => re.test(pathname));
+  const isGuest = request.cookies.get(GUEST_COOKIE)?.value === "1";
+  const isPublic = PUBLIC_PATHS.some((re) => re.test(pathname)) || (isGuest && GUEST_PATHS.some((re) => re.test(pathname)));
 
   if (!user && !isPublic) {
     if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Sign in required" }, { status: 401 });

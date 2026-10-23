@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CUISINES, CUISINE_SLUGS, SITE, citiesForCuisine, cityCuisine, cityCuisineUrl, cuisineBySlug, cuisineFaqs, cuisineUrl } from "@/lib/seo";
+import { CUISINES, CUISINE_SLUGS, SITE, citiesForCuisine, cityCuisine, cityCuisineUrl, cuisineBySlug, cuisineFaqs, cuisineUrl, mapHref } from "@/lib/seo";
 import { Breadcrumbs, CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, breadcrumbSchema, faqSchema } from "@/components/site";
 
 type Props = { params: Promise<{ cuisine: string }> };
@@ -52,7 +52,7 @@ export default async function CuisinePage({ params }: Props) {
           <p className="site-lead">{cuisine.tagline}.</p>
           <p className="p1 site-lead2">{cuisine.intro}</p>
           <div className="site-hero-actions">
-            <Link href="/login" className="site-btn site-btn-lg">Find {lower} near me</Link>
+            <a href={mapHref({ q: cuisine.code })} className="site-btn site-btn-lg">Find {lower} near me</a>
           </div>
         </section>
 
@@ -103,6 +103,7 @@ export default async function CuisinePage({ params }: Props) {
           title={`Every ${lower} shop in Japan, rated.`}
           body={`Open TabeDog, pick ${lower}, and see Tabelog's top-rated shops around you with hours, prices and payment methods in English.`}
           label={`Find ${lower} on the map`}
+          href={mapHref({ q: cuisine.code })}
         />
 
         <section className="site-section">

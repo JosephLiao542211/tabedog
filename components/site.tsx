@@ -2,7 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Logo } from "./icons";
-import { CITIES, CUISINES, FEATURED, SITE, cityCuisineUrl, cityUrl, cuisineUrl, type Faq } from "@/lib/seo";
+import { CITIES, CUISINES, FEATURED, SITE, cityCuisineUrl, cityUrl, cuisineUrl, mapHref, type Faq } from "@/lib/seo";
 
 export function JsonLd({ data }: { data: object | object[] }) {
   const list = Array.isArray(data) ? data : [data];
@@ -41,7 +41,7 @@ export function SiteHeader() {
       </nav>
       <div className="site-actions">
         <Link href="/login" className="site-link">Sign in</Link>
-        <Link href="/login" className="site-btn">Open the map</Link>
+        <a href={mapHref()} className="site-btn">Open the map</a>
       </div>
     </header>
   );
@@ -78,14 +78,14 @@ export function FaqSection({ faqs, title }: { faqs: Faq[]; title: string }) {
   );
 }
 
-export function CtaBand({ title, body, label = "Open the map", href = "/login", image }: { title: string; body: string; label?: string; href?: string; image?: string }) {
+export function CtaBand({ title, body, label = "Open the map", href = mapHref(), image }: { title: string; body: string; label?: string; href?: string; image?: string }) {
   return (
     <section className={`site-cta${image ? " site-cta-photo" : ""}`}>
       {image && <Image src={image} alt="" fill sizes="100vw" className="site-cta-img" />}
       <div className="site-cta-body">
         <h2 className="site-h2">{title}</h2>
         <p className="p1">{body}</p>
-        <Link href={href} className="site-btn site-btn-lg">{label} <ArrowRight /></Link>
+        <a href={href} className="site-btn site-btn-lg">{label} <ArrowRight /></a>
       </div>
     </section>
   );
@@ -124,12 +124,17 @@ export function SiteFooter() {
           <h2 className="sub">TabeDog</h2>
           <ul>
             <li><Link href="/login">Sign in</Link></li>
-            <li><Link href="/login">Create a free account</Link></li>
+            <li><Link href="/login?mode=signup">Create a free account</Link></li>
+            <li><a href={mapHref()}>Try the map without an account</a></li>
             <li><Link href="/#premium">TabeDog Premium</Link></li>
             <li><Link href="/#best-app">Best app for restaurants in Japan</Link></li>
             <li><Link href="/#faq">Tabelog ratings explained</Link></li>
             <li><Link href="/#how">How TabeDog works</Link></li>
             <li><a href="https://tabelog.com/en/" rel="nofollow noopener" target="_blank">Tabelog (official site)</a></li>
+            <li><Link href="/about">About TabeDog</Link></li>
+            <li><Link href="/terms">Terms of service</Link></li>
+            <li><Link href="/privacy">Privacy policy</Link></li>
+            <li><Link href="/legal">特定商取引法に基づく表記</Link></li>
           </ul>
         </div>
       </div>

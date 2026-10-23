@@ -255,6 +255,12 @@ otp_expiry = 3600
 # subject = "Your password has been changed"
 # content_path = "./supabase/templates/password_changed_notification.html"
 
+
+# The "Confirm your email" mail links to /auth/confirm (token hash, signs the user in and opens the map).
+[auth.email.template.confirmation]
+subject = "Confirm your TabeDog account"
+content_path = "./supabase/templates/confirmation.html"
+
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
 enable_signup = false

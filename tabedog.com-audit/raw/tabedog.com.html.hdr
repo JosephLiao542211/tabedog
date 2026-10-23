@@ -1,0 +1,14 @@
+HTTP/2 200 
+age: 0
+cache-control: private, no-cache, no-store, max-age=0, must-revalidate
+content-type: text/html; charset=utf-8
+date: Thu, 22 Oct 2026 09:51:18 GMT
+link: </_next/static/immutable/media/136604918eb5b233-s.p.3dvz2v0pax4dg.woff2>; rel=preload; as="font"; crossorigin=""; type="font/woff2", </_next/static/immutable/media/5c8bbc89ca099f34-s.p.2d479lx_51mgt.woff2>; rel=preload; as="font"; crossorigin=""; type="font/woff2"
+server: Vercel
+strict-transport-security: max-age=63072000
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+x-matched-path: /
+x-powered-by: Next.js
+x-vercel-cache: MISS
+x-vercel-id: kix1::iad1::br7w2-1792662678121-74c5df671efc
+
