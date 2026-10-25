@@ -65,7 +65,7 @@ function readHash(): { filters: Filters; center: Center | null } {
 function writeHash(f: Filters, center: Center | null) {
   const p = new URLSearchParams();
   if (f.q) p.set("q", f.q);
-  if (f.sort !== "distance") p.set("sort", f.sort);
+  if (f.sort !== DEFAULT_FILTERS.sort) p.set("sort", f.sort);
   if (f.pay.length) p.set("pay", f.pay.join(","));
   if (f.price) { p.set("price", f.price); if (f.meal === "lunch") p.set("meal", "lunch"); }
   if (f.minRating) p.set("min", f.minRating);

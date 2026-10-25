@@ -180,7 +180,7 @@ export function parseSearchParams(sp: URLSearchParams, loc: { lat: number; lon: 
     lat: loc.lat, lon: loc.lon,
     range: RANGES[sp.get("range") ?? ""] ? String(sp.get("range")) : "A",
     q: sp.get("q") ?? "",
-    sort: sortRaw && SORTS.includes(sortRaw) ? sortRaw : "distance",
+    sort: sortRaw && SORTS.includes(sortRaw) ? sortRaw : "rating",
     pay: new Set(String(sp.get("pay") || "").split(",").filter(Boolean)),
     pmin: clamp(parseInt(sp.get("pmin") ?? "", 10) || 0, 0, 16),
     pmax: clamp(parseInt(sp.get("pmax") ?? "", 10) || 0, 0, 16),

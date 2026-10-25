@@ -11,7 +11,7 @@ export type Filters = {
   range: string;            // Tabelog radius code F..E
 };
 
-export const DEFAULT_FILTERS: Filters = { q: "", sort: "distance", pay: [], price: "", meal: "dinner", minRating: "", open: false, range: "A" };
+export const DEFAULT_FILTERS: Filters = { q: "", sort: "rating", pay: [], price: "", meal: "dinner", minRating: "", open: false, range: "A" };
 
 export const activeFilterCount = (f: Filters) => f.pay.length + (f.price ? 1 : 0) + (f.minRating ? 1 : 0) + (f.open ? 1 : 0);
 
@@ -45,7 +45,7 @@ export function FilterPanel({ f, onChange, onReset }: { f: Filters; onChange: (p
   );
 }
 
-const SORTS: Array<[SortKey, string]> = [["distance", "Nearest first"], ["rating", "Highest rated"], ["reviews", "Most reviewed"], ["price_asc", "Cheapest first"], ["price_desc", "Priciest first"]];
+const SORTS: Array<[SortKey, string]> = [["rating", "Highest rated"], ["distance", "Nearest first"], ["reviews", "Most reviewed"], ["price_asc", "Cheapest first"], ["price_desc", "Priciest first"]];
 
 export function SortPanel({ value, onChange }: { value: SortKey; onChange: (s: SortKey) => void }) {
   return (
