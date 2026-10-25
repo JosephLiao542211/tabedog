@@ -58,7 +58,7 @@ supabase/
 ## How it works
 
 - **Sign in** is required everywhere except `/login` and `/auth/*`. `proxy.ts` validates the session on each request; API routes answer 401 when signed out.
-- **Where you are** is fixed automatically: the saved `tabelog_loc` cookie (full precision, 1 year) → browser GPS (high accuracy, refined for a few seconds) → your IP. Results from a coarse IP fix show up immediately and are replaced once GPS lands. Right-click (long-press on touch) the map to set your location by hand. The person icon is grey while the fix is only IP-based.
+- **Where you are** is fixed automatically: the saved `tabelog_loc` cookie (full precision, 1 year) → your IP, then live browser GPS (high accuracy) that keeps tracking you the whole time the app is open. Results from a coarse IP fix show up immediately and are replaced once GPS lands. The locate button just makes the map follow you. The person icon is grey while the fix is only IP-based.
 - **Search bar** takes what you feel like eating ("ramen", "boba", "pork cutlet"…). The server maps it to one of Tabelog's genre codes; unknown words fall back to all restaurants and the list says so.
 - **Search this area** appears as soon as the map centre moves a quarter of the searched radius (or you zoom out past it). The radius is picked from the viewport.
 - **Filters** (sliders icon): payment (card / QR / e-money, Tabelog-native), price per person for dinner or lunch (Tabelog-native), minimum rating, open now. **Sort** (arrows icon): nearest, highest rated, most reviewed.

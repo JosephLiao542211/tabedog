@@ -14,7 +14,13 @@ const db = () =>
     auth: { persistSession: false, autoRefreshToken: false },
   }));
 
-function must<T>(res: { data: T | null; error: { message: string } | null }, what: string): T {
+// PostgREST's "table not found": the blog migration hasn't reached this database yet. Render an empty
+// blog instead of failing the build; publishing the first post revalidates every blog page anyway.
+const NO_TABLE = "PGRST205";
+
+/** The query's data, or `empty` when the posts table doesn't exist yet. Other errors throw (ISR keeps serving the last good page). */
+function must<T>(res: { data: T | null; error: { message: string; code?: string } | null }, what: string, empty: T): T {
+  if (res.error?.code === NO_TABLE) { console.warn(`[blog] ${what}: posts table missing, run the blog migration`); return empty; }
   if (res.error) throw new Error(`[blog] ${what}: ${res.error.message}`);
   return res.data as T;
 }
@@ -25,18 +31,18 @@ export async function listPosts({ topic, page = 1, limit = BLOG.pageSize }: { to
   if (topic) q = q.eq("topic", topic);
   const res = await q.range((page - 1) * limit, page * limit - 1);
   if (res.error?.code === "PGRST103") return { posts: [] as PostCard[], total: 0 }; // page past the end: the caller 404s
-  return { posts: must(res, "list") as unknown as PostCard[], total: res.count ?? 0 };
+  return { posts: must(res, "list", []) as unknown as PostCard[], total: res.count ?? 0 };
 }
 
 export async function getPost(slug: string): Promise<Post | null> {
-  return must(await db().from("posts").select("*").eq("slug", slug).maybeSingle(), "get") as Post | null;
+  return must(await db().from("posts").select("*").eq("slug", slug).maybeSingle(), "get", null) as Post | null;
 }
 
 /** Same topic first, then the newest of the rest. */
 export async function relatedPosts(post: Pick<Post, "id" | "topic">, n = 3): Promise<PostCard[]> {
-  const same = must(await db().from("posts").select(CARD_COLUMNS).eq("topic", post.topic).neq("id", post.id).order("published_at", { ascending: false }).limit(n), "related") as unknown as PostCard[];
+  const same = must(await db().from("posts").select(CARD_COLUMNS).eq("topic", post.topic).neq("id", post.id).order("published_at", { ascending: false }).limit(n), "related", []) as unknown as PostCard[];
   if (same.length >= n) return same;
-  const rest = must(await db().from("posts").select(CARD_COLUMNS).neq("topic", post.topic).order("published_at", { ascending: false }).limit(n - same.length), "related") as unknown as PostCard[];
+  const rest = must(await db().from("posts").select(CARD_COLUMNS).neq("topic", post.topic).order("published_at", { ascending: false }).limit(n - same.length), "related", []) as unknown as PostCard[];
   return [...same, ...rest];
 }
 
@@ -64,10 +70,10 @@ export async function requireBlogAdmin(next = "/admin/blog"): Promise<{ email: s
 
 export async function adminListPosts() {
   const { admin } = await requireBlogAdmin();
-  return must(await admin.from("posts").select("id, slug, title, topic, status, published_at, updated_at, featured, cover_url").order("updated_at", { ascending: false }), "admin list") as Pick<Post, "id" | "slug" | "title" | "topic" | "status" | "published_at" | "updated_at" | "featured" | "cover_url">[];
+  return must(await admin.from("posts").select("id, slug, title, topic, status, published_at, updated_at, featured, cover_url").order("updated_at", { ascending: false }), "admin list", []) as Pick<Post, "id" | "slug" | "title" | "topic" | "status" | "published_at" | "updated_at" | "featured" | "cover_url">[];
 }
 
 export async function adminGetPost(id: string) {
   const { admin } = await requireBlogAdmin(`/admin/blog/${id}`);
-  return must(await admin.from("posts").select("*").eq("id", id).maybeSingle(), "admin get") as Post | null;
+  return must(await admin.from("posts").select("*").eq("id", id).maybeSingle(), "admin get", null) as Post | null;
 }

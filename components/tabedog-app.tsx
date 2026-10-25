@@ -12,7 +12,7 @@ import { haversine } from "@/lib/geo";
 import { fmtDist, priceYenOf } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { addToList, colorHex, createList, deleteList, loadLists, removeFromList, updateList, type SavedList } from "@/lib/lists";
-import { can, type Plan } from "@/lib/plan";
+import { BILLING_NOTES, can, type Plan } from "@/lib/plan";
 import type { Genre, LocateResponse, Restaurant, SearchResponse, SortKey } from "@/lib/types";
 import { RestaurantCard } from "./restaurant-card";
 import { ListsPanel, type ListDraft } from "./lists";
@@ -20,7 +20,7 @@ import { GuestLimitPrompt, ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, 
 import { GUEST_LEFT_HEADER, GUEST_SEARCH_LIMIT } from "@/lib/guest";
 import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
-import { FilterIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
+import { ChevronRight, FilterIcon, GearIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
 import { fullHeight, sheetPx, useMobile, useSheet } from "./use-sheet";
 
 maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
@@ -31,14 +31,8 @@ type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean };
 type Panel = "filter" | "sort" | "account" | null;
 
 const COOKIE = "tabelog_loc";
-const BILLING_NOTES: Record<string, string> = {
-  success: "Welcome to Premium! Your lists are ready.",
-  pending: "Payment received. Premium switches on in a moment; reload if you don’t see it.",
-  cancel: "Checkout cancelled. You’re still on the free plan.",
-  error: "Something went wrong talking to Stripe. Please try again.",
-  unconfigured: "Billing isn’t set up on this server yet.",
-  nocustomer: "No subscription found for this account.",
-};
+// one-tap searches under the search bar
+const QUICK = ["Ramen", "Sushi", "Izakaya", "Yakiniku", "Cafe", "Yakitori", "Tempura", "Udon"];
 const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
 
 // ---------- my location cookie ----------
@@ -52,12 +46,6 @@ function writeLocCookie(loc: Loc) {
   document.cookie = `${COOKIE}=${v}; Max-Age=${365 * 24 * 3600}; Path=/; SameSite=Lax`;
 }
 const isCoarse = (l: Loc | null) => !l || String(l.src || "").startsWith("ip") || (l.acc || 0) > 1000;
-function gps(opts: PositionOptions): Promise<Loc> {
-  return new Promise((res, rej) => {
-    if (!navigator.geolocation) return rej(new Error("no geolocation"));
-    navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, src: "gps" }), rej, opts);
-  });
-}
 
 // ---------- URL hash <-> filters ----------
 function readHash(): { filters: Filters; center: Center | null } {
@@ -110,8 +98,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     markers: {} as Record<string, Marker>,
     listMarkers: {} as Record<string, Marker>, // pins for saved places that aren't in the current results
     me: null as Marker | null,
-    watchId: null as number | null, // live tracking: the geolocation watch while the locate button is on
-    following: false,               // ...and whether the camera rides along with it
+    watchId: null as number | null, // live tracking: the geolocation watch, running the whole time the app is open
+    following: false,               // ...and whether the camera rides along with it (the locate button turns this on)
     filters: DEFAULT_FILTERS as Filters,
     center: null as Center | null,
     page: 1,
@@ -125,10 +113,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     reqId: 0,
     hasMore: false,
     detailOpen: false,
-    ctxAt: null as Center | null,
     observer: null as IntersectionObserver | null,
     genres: [] as Genre[],
-    pressTimer: 0,
   }).current;
 
   const [items, setItems] = useState<Restaurant[]>([]);
@@ -140,7 +126,6 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const [tracking, setTracking] = useState<"off" | "on" | "follow">("off");
   const [detail, setDetail] = useState<Restaurant | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
-  const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
   const [q, setQ] = useState("");
   const [suggest, setSuggest] = useState<Genre[]>([]);
   const [selIdx, setSelIdx] = useState(-1);
@@ -164,16 +149,16 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     active: mobile, cssVar: "--sheet", handle: toolbarEl, body: listEl,
     stops: () => ({ peek: toolbarEl.current?.offsetHeight ?? 96, half: window.innerHeight * 0.44, full: fullHeight() }),
   });
-  // the filter / sort / account panels hang off the toolbar, so a peeking sheet would clip them
-  useEffect(() => { if (mobile && panel && listSheet.stop === "peek") listSheet.snapTo("half"); }, [panel]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the filter / sort panels hang off the toolbar, so a peeking sheet would clip them
+  useEffect(() => { if (mobile && panel && panel !== "account" && listSheet.stop === "peek") listSheet.snapTo("half"); }, [panel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- geometry helpers: the floating panels cover part of the map ----------
   const wide = () => window.innerWidth > 800;
   // how much of the bottom of the map a sheet covers on a phone
   const cover = () => E.detailOpen ? (sheetPx("--sheet-detail") || window.innerHeight * 0.72) : (sheetPx("--sheet") || window.innerHeight * 0.44);
   const fitPadding = () => wide()
-    ? { left: 380 + 48, top: 60, right: E.detailOpen ? 360 + 48 : 80, bottom: 110 }
-    : { left: 30, top: 70, right: 30, bottom: Math.min(cover(), window.innerHeight * 0.6) + 90 };
+    ? { left: 380 + 48, top: 120, right: E.detailOpen ? 360 + 48 : 80, bottom: 60 }
+    : { left: 30, top: 120, right: 30, bottom: Math.min(cover(), window.innerHeight * 0.6) + 90 };
   const viewOffset = (): [number, number] => wide() ? [((380 + 16) - (E.detailOpen ? 360 + 16 : 0)) / 2, 0] : [0, -Math.min(cover(), window.innerHeight * 0.72) / 2];
   const visualCenter = () => { const map = E.map!; const p = map.project(map.getCenter()), o = viewOffset(); return map.unproject([p.x + o[0], p.y + o[1]]); };
 
@@ -185,11 +170,13 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     // move the existing marker rather than rebuilding it, so live tracking glides instead of flickering
     if (!E.me) {
       const d = document.createElement("div");
-      d.innerHTML = PERSON_SVG;
+      d.className = "person"; d.innerHTML = PERSON_SVG;
       E.me = new maplibregl.Marker({ element: d }).setLngLat([loc.lng, loc.lat]).addTo(map);
     }
     const d = E.me.getElement();
-    d.className = "person" + (String(loc.src || "").startsWith("ip") ? " coarse" : "") + (E.watchId != null ? " live" : "");
+    // toggle rather than assign className: MapLibre put its own maplibregl-marker classes (position: absolute) on this element
+    d.classList.toggle("coarse", String(loc.src || "").startsWith("ip"));
+    d.classList.toggle("live", E.watchId != null);
     d.title = (loc.acc || 0) > 1000 ? "Roughly where you are (from your IP)" : `You are here (±${Math.round(loc.acc || 0)} m)`;
     E.me.setLngLat([loc.lng, loc.lat]);
   }
@@ -338,7 +325,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     if (mobile && listSheet.stop === "peek") listSheet.snapTo("half"); // a new search brings its results up
   };
 
-  // ---------- my location: cookie -> GPS -> IP, all automatic ----------
+  // ---------- my location: cookie -> IP -> live GPS, all automatic ----------
   function applyLocation(loc: Loc) {
     const prev = readLoc();
     writeLoc(loc);
@@ -351,36 +338,21 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     }
     if ((!E.searchedOnce || upgraded) && E.map) E.map.easeTo({ center: [loc.lng, loc.lat], zoom: Math.max(E.map.getZoom(), 14.5), offset: viewOffset(), duration: 0 });
   }
-  // keep improving a poor fix for a short while
-  function refineGPS(seconds = 25) {
-    if (!navigator.geolocation) return;
-    const id = navigator.geolocation.watchPosition((p) => {
-      const cur = readLoc();
-      if (!cur || isCoarse(cur) || p.coords.accuracy < (cur.acc || 1e9) - 5) applyLocation({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, src: "gps" });
-    }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
-    setTimeout(() => navigator.geolocation.clearWatch(id), seconds * 1000);
-  }
   async function ensureLocation() {
     const saved = readLoc();
-    if (saved) {
-      applyLocation(saved); // search right away from the saved spot, then quietly improve it
-      if (isCoarse(saved)) gps({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }).then(applyLocation).catch(() => {}); else refineGPS(10);
-      return;
-    }
-    let gotGps = false;
-    gps({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
-      .then((l) => { gotGps = true; applyLocation(l); if ((l.acc || 0) > 60) refineGPS(); })
-      .catch(() => { if (!readLoc()) setCount("Allow location, or right-click the map where you are."); });
+    if (saved) applyLocation(saved); // search right away from the saved spot; live GPS takes over as soon as it lands
+    startTracking();
+    if (saved) return;
     // IP fallback kicks in immediately so results show while the GPS fix is still coming
     try {
       const res = await fetch("/api/locate");
       if (res.status === 401) { window.location.assign("/login"); return; }
       const ip = (await res.json()) as LocateResponse;
-      if (!gotGps && !readLoc() && Number.isFinite(ip.lat)) applyLocation({ lat: ip.lat, lng: ip.lng, acc: ip.acc, src: ip.src });
-    } catch { /* GPS or a manual pin will do */ }
+      if (!readLoc() && Number.isFinite(ip.lat)) applyLocation({ lat: ip.lat, lng: ip.lng, acc: ip.acc, src: ip.src });
+    } catch { /* GPS will do */ }
   }
 
-  // ---------- live tracking: the locate button pins you to your GPS and keeps the pin on you as you move ----------
+  // ---------- live tracking: GPS keeps the pin on you while the app is open; the locate button makes the camera follow ----------
   const follow = (loc: Center) => E.map?.easeTo({ center: [loc.lng, loc.lat], offset: viewOffset(), duration: 600 });
   function unfollow() { if (E.following) { E.following = false; setTracking("on"); } }
   function stopTracking() {
@@ -388,25 +360,19 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     E.watchId = null; E.following = false; setTracking("off"); renderMe();
   }
   function startTracking() {
-    if (!navigator.geolocation) { setCount("This browser can’t share your location."); return; }
-    let first = true;
-    E.following = true; setTracking("follow");
+    if (!navigator.geolocation) { if (isCoarse(readLoc())) setCount("This browser can’t share your location."); return; }
+    if (E.watchId != null) return;
+    setTracking(E.following ? "follow" : "on");
     E.watchId = navigator.geolocation.watchPosition((p) => {
+      // every fix moves the pin; applyLocation only re-searches when the fix upgrades an IP guess or jumps far.
+      // Walking around just moves the pin, and "Search this area" offers a fresh search once you've walked off
       const loc: Loc = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, src: "gps" };
-      if (first) {
-        // the first fix replaces whatever we had (IP guess, a hand-placed pin, a searched area) and searches from here
-        first = false;
-        setCenter(null); setFilters({ ...E.filters, range: "A" }); E.searchedOnce = false;
-        applyLocation(loc);
-        return;
-      }
-      // after that just move the pin (and the map, if following); "Search this area" offers a fresh search once you've walked off
-      writeLoc(loc);
+      applyLocation(loc);
       if (E.following) follow(loc);
     }, (err) => {
-      stopTracking();
-      setCount(err.code === err.PERMISSION_DENIED ? "Location is blocked. Allow it in your browser settings to track yourself." : "Couldn’t get a GPS fix. Try again outside or near a window.");
-    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+      // only a refusal ends tracking; a lost or slow fix (indoors, a tunnel) is temporary and the watch recovers by itself
+      if (err.code === err.PERMISSION_DENIED) { stopTracking(); if (isCoarse(readLoc())) setCount("Location is blocked. Allow it in your browser settings to see what’s near you."); }
+    }, { enableHighAccuracy: true, maximumAge: 0 });
     renderMe();
   }
 
@@ -489,17 +455,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       map.addLayer({ id: "search-area-line", type: "line", source: "search-area", paint: { "line-color": "#ff6347", "line-width": 1.5, "line-dasharray": [3, 3], "line-opacity": 0.6 } });
       renderMe();
     });
-    // right-click / long-press the map to fix your location by hand
-    const showCtx = (point: { x: number; y: number }, lngLat: Center) => {
-      E.ctxAt = { lat: lngLat.lat, lng: lngLat.lng };
-      setCtx({ x: Math.min(point.x, window.innerWidth - 200), y: Math.min(point.y, window.innerHeight - 60) });
-    };
-    map.on("contextmenu", (e) => { e.preventDefault(); showCtx(e.point, e.lngLat); });
-    map.on("touchstart", (e) => { clearTimeout(E.pressTimer); if (e.points.length === 1) E.pressTimer = window.setTimeout(() => showCtx(e.point, e.lngLat), 600); });
-    map.on("touchmove", () => clearTimeout(E.pressTimer));
-    map.on("touchend", () => clearTimeout(E.pressTimer));
-    map.on("click", () => setCtx(null));
-    map.on("movestart", (e) => { setCtx(null); if (e.originalEvent) E.quietMove = false; });
+    map.on("movestart", (e) => { if (e.originalEvent) E.quietMove = false; });
     map.on("dragstart", unfollow); // panning by hand lets go of your position; tap locate to snap back
     map.on("moveend", checkMoved);
     map.on("zoomend", checkMoved);
@@ -528,7 +484,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     // composedPath() still holds elements React has already swapped out by the time this runs
     const onDocClick = (e: MouseEvent) => {
       const path = e.composedPath().filter((n): n is Element => n instanceof Element);
-      if (!path.some((el) => el.matches(".panel, .icon"))) setPanel(null);
+      if (!path.some((el) => el.matches(".panel, .icon, #accountBtn"))) setPanel(null);
       if (!path.some((el) => el.id === "listsWrap")) setShowLists(false);
     };
     const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") { setPanel(null); setShowLists(false); closeDetail(); } };
@@ -539,6 +495,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       document.removeEventListener("keydown", onKey);
       E.observer?.disconnect(); E.observer = null;
       if (E.watchId != null) navigator.geolocation.clearWatch(E.watchId);
+      E.watchId = null;
       map.remove(); E.map = null; E.markers = {}; E.listMarkers = {}; E.me = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -579,19 +536,13 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     E.page = 1; load({ keepView: true });
     unfollow();
   };
-  // off -> track and follow; tracking but panned away -> snap back and follow; following -> stop tracking
+  // snap back to you and follow as you move (tracking itself is always on; if it was blocked, try again)
   const locate = () => {
+    E.following = true;
     if (E.watchId == null) return startTracking();
-    if (E.following) return stopTracking();
-    E.following = true; setTracking("follow");
+    setTracking("follow");
     const home = readLoc(), map = E.map; if (!home || !map) return;
     map.flyTo({ center: [home.lng, home.lat], zoom: Math.max(map.getZoom(), 15), duration: 600, offset: viewOffset() });
-  };
-  const setHere = () => {
-    const ll = E.ctxAt; setCtx(null); if (!ll) return;
-    if (E.watchId != null) stopTracking(); // a hand-placed pin wins over GPS
-    setCenter(null); E.searchedOnce = false;
-    applyLocation({ lat: ll.lat, lng: ll.lng, acc: 0, src: "manual" });
   };
 
   const nFilters = activeFilterCount(filters);
@@ -634,9 +585,6 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
               {nFilters > 0 && <i className="badge">{nFilters}</i>}
             </button>
             <button type="button" className={"icon" + (panel === "sort" ? " open" : "")} aria-label="Sort" title="Sort" onClick={() => togglePanel("sort")}><SortIcon /></button>
-            <button type="button" className={"icon" + (panel === "account" ? " open" : "")} aria-label="Account" title={guest ? "Guest" : email} onClick={() => togglePanel("account")}>
-              <span className="initial">{guest ? "G" : (email[0] || "?")}</span>
-            </button>
           </div>
           {viewing ? (
             <p className="sub" id="count">
@@ -650,36 +598,6 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
 
         {panel === "filter" && <FilterPanel f={filters} onChange={changeFilters} onReset={resetFilters} />}
         {panel === "sort" && <SortPanel value={filters.sort} onChange={(s) => { setPanel(null); changeFilters({ sort: s }); }} />}
-        {panel === "account" && guest && (
-          <div className="panel account">
-            <p className="sub">Browsing as</p>
-            <p className="p1">Guest</p>
-            <p className="p2">{guestLeft} of {GUEST_SEARCH_LIMIT} guest searches left this hour. Create a free account for unlimited searches.</p>
-            <a href="/login" className="btn">Sign in or create account</a>
-            <form action="/auth/signout" method="post" className="foot">
-              <span className="sub">Nothing is saved in guest mode.</span>
-              <button type="submit" className="chip"><SignOutIcon />Leave guest mode</button>
-            </form>
-          </div>
-        )}
-        {panel === "account" && !guest && (
-          <div className="panel account">
-            <p className="sub">Signed in as</p>
-            <p className="p1" title={email}>{email}</p>
-            <div className="row plan-row">
-              <PlanBadge plan={plan} />
-              <span className="sub">{plan === "premium" ? "Saved lists and future premium features are unlocked." : billing ? PREMIUM_PRICE_LABEL : "Saved lists need Premium."}</span>
-            </div>
-            {billingNote && <p className="p2 billing-note" role="status">{billingNote}</p>}
-            {billing && plan === "free" && <UpgradeButton />}
-            {billing && plan === "premium" && <ManageBillingButton />}
-            <form action="/auth/signout" method="post" className="foot">
-              <span className="sub">{plan === "premium" ? "Saved places sync to your account." : "Search is free for everyone."}</span>
-              <button type="submit" className="chip"><SignOutIcon />Sign out</button>
-            </form>
-          </div>
-        )}
-
         <div id="list" ref={listEl}>
           {listsNote && <p className="sub" style={{ padding: "10px 16px", color: "var(--accent-ink)" }}>{listsNote}</p>}
           {listItems.map((r, i) => (
@@ -705,49 +623,86 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
         <button type="button" aria-label="Zoom out" onClick={() => E.map?.zoomOut()}><ZoomOutIcon /></button>
       </div>
       <button type="button" id="recenter" className={"float" + (tracking !== "off" ? " " + tracking : "")} aria-pressed={tracking !== "off"}
-        title={tracking === "off" ? "Track my location" : tracking === "follow" ? "Stop tracking" : "Follow me"} onClick={locate}><RecenterIcon /></button>
+        title={tracking === "off" ? "Show my location" : tracking === "follow" ? "Following you" : "Follow me"} onClick={locate}><RecenterIcon /></button>
+      <div id="listsWrap">
+        <button type="button" id="listsBtn" className={"float" + (showLists || upsell ? " open" : "") + (viewing ? " on" : "")} aria-label="Your lists" aria-expanded={showLists || upsell} title={hasLists ? "Your lists" : "Your lists (Premium)"}
+          onClick={() => (hasLists ? setShowLists((v) => !v) : setUpsell((v) => !v))}>
+          <HeartIcon size={22} filled={!!viewing} />
+          {lists.length > 1 && <i className="badge">{lists.length}</i>}
+          {!hasLists && <i className="lock" aria-hidden="true" />}
+        </button>
+        {upsell && <UpgradePrompt feature="lists" id="listsUpsell" billing={billing} guest={guest} onClose={closeUpsell} />}
+        {showLists && hasLists && (
+          <ListsPanel lists={lists} viewing={viewList} onOpen={openList}
+            onCreate={(d) => newList(d)} onUpdate={editList} onDelete={removeList} />
+        )}
+      </div>
 
       <div id="dock">
+        <div id="bar">
+          <div id="search" className="float">
+            <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+              <SearchIcon />
+              <input id="q" ref={qEl} type="search" placeholder="Ramen, sushi, cafe…" enterKeyHint="search"
+                value={q} onChange={(e) => { setQ(e.target.value); updateSuggest(e.target.value); }} onKeyDown={onQKey}
+                onBlur={() => setTimeout(() => setSuggest([]), 120)} />
+              {q && <button type="button" id="clearQ" aria-label="Clear" onClick={() => submit("")}><XIcon /></button>}
+              <button type="button" id="accountBtn" className={panel === "account" ? "open" : ""} aria-label="Account" aria-expanded={panel === "account"} title={guest ? "Guest" : email} onClick={() => togglePanel("account")}>
+                {guest ? "G" : (email[0] || "?")}
+              </button>
+            </form>
+            {suggest.length > 0 && (
+              <div id="suggest" className="float">
+                {suggest.map((g, i) => <div key={g.code} className={"p1" + (i === selIdx ? " sel" : "")} onMouseDown={() => submit(g.label)}>{g.label}</div>)}
+              </div>
+            )}
+          </div>
+        {panel === "account" && guest && (
+          <div className="panel account" id="accountPanel">
+            <p className="sub">Browsing as</p>
+            <p className="p1">Guest</p>
+            <p className="p2">{guestLeft} of {GUEST_SEARCH_LIMIT} guest searches left this hour. Create a free account for unlimited searches.</p>
+            <a href="/login" className="btn">Sign in or create account</a>
+            <form action="/auth/signout" method="post" className="foot">
+              <span className="sub">Nothing is saved in guest mode.</span>
+              <button type="submit" className="chip"><SignOutIcon />Leave guest mode</button>
+            </form>
+          </div>
+        )}
+        {panel === "account" && !guest && (
+          <div className="panel account" id="accountPanel">
+            <p className="sub">Signed in as</p>
+            <p className="p1" title={email}>{email}</p>
+            <div className="row plan-row">
+              <PlanBadge plan={plan} />
+              <span className="sub">{plan === "premium" ? "Saved lists and future premium features are unlocked." : billing ? PREMIUM_PRICE_LABEL : "Saved lists need Premium."}</span>
+            </div>
+            {billingNote && <p className="p2 billing-note" role="status">{billingNote}</p>}
+            {billing && plan === "free" && <UpgradeButton />}
+            {billing && plan === "premium" && <ManageBillingButton />}
+            <a href="/account" className="account-link">
+              <span className="account-link-icon"><GearIcon /></span>
+              <span className="account-link-text"><b>Account settings</b><span className="sub">Email, password and plan</span></span>
+              <ChevronRight />
+            </a>
+            <form action="/auth/signout" method="post" className="foot">
+              <span className="sub">{plan === "premium" ? "Saved places sync to your account." : "Search is free for everyone."}</span>
+              <button type="submit" className="chip"><SignOutIcon />Sign out</button>
+            </form>
+          </div>
+        )}
+        </div>
+        <div id="quick">
+          {QUICK.map((label) => {
+            const on = filters.q.toLowerCase() === label.toLowerCase();
+            return <button key={label} type="button" className={"float" + (on ? " on" : "")} aria-pressed={on} onClick={() => submit(on ? "" : label)}>{label}</button>;
+          })}
+        </div>
         <div id="areaBar" className={"float" + (showArea && !viewing ? " show" : "") + (loading ? " loading" : "")}>
           <button type="button" disabled={loading} onClick={searchArea}><RefreshIcon /><span>{loading ? "Searching…" : "Search this area"}</span></button>
           <div className="bar"><i /></div>
         </div>
-        <div id="bar">
-        <div id="search" className="float">
-          <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <SearchIcon />
-            <input id="q" ref={qEl} type="search" placeholder="What do you feel like? Ramen, sushi, cafe…" enterKeyHint="search"
-              value={q} onChange={(e) => { setQ(e.target.value); updateSuggest(e.target.value); }} onKeyDown={onQKey}
-              onBlur={() => setTimeout(() => setSuggest([]), 120)} />
-            {q && <button type="button" id="clearQ" aria-label="Clear" onClick={() => submit("")}><XIcon /></button>}
-          </form>
-          {suggest.length > 0 && (
-            <div id="suggest" className="float">
-              {suggest.map((g, i) => <div key={g.code} className={"p1" + (i === selIdx ? " sel" : "")} onMouseDown={() => submit(g.label)}>{g.label}</div>)}
-            </div>
-          )}
-        </div>
-        <div id="listsWrap">
-          <button type="button" id="listsBtn" className={"float" + (showLists || upsell ? " open" : "") + (viewing ? " on" : "")} aria-label="Your lists" aria-expanded={showLists || upsell} title={hasLists ? "Your lists" : "Your lists (Premium)"}
-            onClick={() => (hasLists ? setShowLists((v) => !v) : setUpsell((v) => !v))}>
-            <HeartIcon size={22} filled={!!viewing} />
-            {lists.length > 1 && <i className="badge">{lists.length}</i>}
-            {!hasLists && <i className="lock" aria-hidden="true" />}
-          </button>
-          {upsell && <UpgradePrompt feature="lists" id="listsUpsell" billing={billing} guest={guest} onClose={closeUpsell} />}
-          {showLists && hasLists && (
-            <ListsPanel lists={lists} viewing={viewList} onOpen={openList}
-              onCreate={(d) => newList(d)} onUpdate={editList} onDelete={removeList} />
-          )}
-        </div>
-        </div>
       </div>
-
-      {ctx && (
-        <div id="ctx" className="float" style={{ left: ctx.x, top: ctx.y }}>
-          <button type="button" onClick={setHere}>Set my location here</button>
-        </div>
-      )}
     </div>
   );
 }

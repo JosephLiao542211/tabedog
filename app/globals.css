@@ -76,7 +76,7 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
 .upgrade .upgrade-form + .sub { text-align: center; }
 .account .upgrade-form { margin-top: 12px; }
 .account .billing-note { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: var(--hover); }
-#listsUpsell { position: absolute; bottom: 60px; right: 0; width: min(300px, calc(100vw - 2 * var(--gap))); }
+#listsUpsell { position: absolute; bottom: 0; right: 52px; width: min(300px, calc(100vw - 2 * var(--gap) - 52px)); }
 #detailUpsell { position: absolute; top: 48px; left: 10px; z-index: 3; width: 260px; }
 #listsBtn .lock { position: absolute; top: 0; right: 0; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 2px solid var(--bg); }
 #listsBtn .lock::after { content: ""; position: absolute; left: 3px; top: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--bg); }
@@ -212,39 +212,51 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
 #recenter { position: absolute; right: var(--gap); bottom: 36px; z-index: 10; border-radius: 14px; color: var(--ink); transition: right .2s; }
 #recenter.on { color: var(--accent-ink); }
 #recenter.follow, #recenter.follow:hover { background: var(--accent); color: #fff; }
-.person.live { background: var(--accent); }
-.person.live::before { background: rgba(255,99,71,.25); }
 .app.has-detail #ctl, .app.has-detail #recenter { right: calc(var(--gap) * 2 + var(--detail)); }
 
-/* ---- bottom centre: area pill above the search bar ---- */
-#dock { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 11; width: min(520px, calc(100vw - 2 * var(--gap))); display: flex; flex-direction: column; align-items: center; gap: 10px; }
-#areaBar { display: flex; flex-direction: column; overflow: hidden; min-width: 200px; border-radius: 22px;
-  opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; transform: translateY(8px); }
-#areaBar.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
-#areaBar button { border: 0; background: none; padding: 11px 18px 11px 16px; font-weight: 700; color: var(--ink); cursor: pointer; display: flex; gap: 8px; align-items: center; justify-content: center; }
-#areaBar button svg { color: var(--accent); }
-#areaBar button:hover { background: var(--hover); }
-#areaBar button:disabled { color: var(--muted); cursor: default; background: none; }
-#areaBar .bar { height: 3px; background: var(--line); display: none; }
-#areaBar.loading .bar { display: block; }
-#bar { display: flex; align-items: center; gap: 10px; width: 100%; }
-#search { flex: 1; min-width: 0; position: relative; border-radius: 25px; }
-#search form { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 14px 0 18px; }
+/* ---- top left, beside the list: the search bar (with the account button in it), quick searches, then the area pill centred under it.
+   The dock is capped at the bar's width, so centring inside it centres on the bar ---- */
+#dock { position: absolute; top: var(--gap); left: calc(var(--side) + var(--gap) * 2); right: calc(var(--gap) * 2 + 42px); max-width: 560px; z-index: 11; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; transition: right .2s; }
+#dock > * { pointer-events: auto; }
+#bar { position: relative; width: 100%; }
+#search { position: relative; border-radius: 22px; }
+#search form { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 5px 0 16px; }
 #search:focus-within { box-shadow: 0 6px 24px rgba(26,28,26,.2), 0 1px 3px rgba(26,28,26,.08); }
 #search form > svg { flex: none; color: var(--accent); }
 #q { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
 #q::placeholder { color: var(--muted); }
 #q::-webkit-search-cancel-button { display: none; }
 #clearQ { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; line-height: 0; }
-#suggest { position: absolute; bottom: 58px; left: 0; right: 0; overflow: hidden; padding: 6px 0; }
+#accountBtn { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; padding: 0; background: var(--accent); color: #fff; font-size: 14px; font-weight: 800; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+#accountBtn:hover, #accountBtn.open { background: var(--accent-ink); }
+#suggest { position: absolute; top: 50px; left: 0; right: 0; z-index: 2; overflow: hidden; padding: 6px 0; }
 #suggest div { padding: 9px 18px; cursor: pointer; }
 #suggest div:hover, #suggest div.sel { background: var(--hover); }
-#listsWrap { position: relative; flex: none; }
-#listsBtn { width: 50px; height: 50px; border-radius: 50%; border: 0; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; position: relative; }
+#accountPanel { top: 52px; right: 0; width: min(320px, 100%); z-index: 3; }
+#quick { display: flex; gap: 6px; width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 8px; margin: -2px 0 -8px; }
+#quick::-webkit-scrollbar { display: none; }
+#quick button { flex: none; height: 30px; padding: 0 12px; border: 0; border-radius: 15px; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; box-shadow: 0 2px 8px rgba(26,28,26,.12), 0 1px 2px rgba(26,28,26,.08); }
+#quick button:hover { background: var(--hover); }
+#quick button.on { background: var(--ink); color: var(--bg); }
+#areaBar { display: flex; flex-direction: column; overflow: hidden; min-width: 200px; border-radius: 22px;
+  opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; transform: translateY(-8px); }
+#areaBar.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+#areaBar button { border: 0; background: none; padding: 9px 18px 9px 16px; font-weight: 700; color: var(--ink); cursor: pointer; display: flex; gap: 8px; align-items: center; justify-content: center; }
+#areaBar button svg { color: var(--accent); }
+#areaBar button:hover { background: var(--hover); }
+#areaBar button:disabled { color: var(--muted); cursor: default; background: none; }
+#areaBar .bar { height: 3px; background: var(--line); display: none; }
+#areaBar.loading .bar { display: block; }
+.app.has-detail #dock { right: calc(var(--gap) * 3 + var(--detail) + 42px); }
+
+/* ---- lists: the heart sits right above the locate button; its panel opens to the left ---- */
+#listsWrap { position: absolute; right: var(--gap); bottom: calc(36px + 42px + 10px); z-index: 10; transition: right .2s; }
+#listsBtn { width: 42px; height: 42px; border-radius: 14px; border: 0; background: var(--bg); color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; position: relative; }
 #listsBtn:hover, #listsBtn.open { background: var(--hover); }
 #listsBtn.on { color: var(--accent); }
 #listsBtn .badge { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; font-style: normal; border: 2px solid var(--bg); }
-#listsPanel { position: absolute; bottom: 60px; right: 0; width: min(320px, calc(100vw - 2 * var(--gap))); max-height: min(60vh, 520px); display: flex; flex-direction: column; border: 1px solid var(--line); overflow: hidden; }
+#listsPanel { position: absolute; bottom: 0; right: 52px; width: min(320px, calc(100vw - 2 * var(--gap) - 52px)); max-height: min(60vh, 520px); display: flex; flex-direction: column; border: 1px solid var(--line); overflow: hidden; }
+.app.has-detail #listsWrap { right: calc(var(--gap) * 2 + var(--detail)); }
 .lhead { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 8px; }
 .lrows { overflow-y: auto; padding: 0 8px 8px; }
 .lrow { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; }
@@ -274,9 +286,6 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
 .ledit .chip { height: 30px; }
 .ledit .chip:disabled { opacity: .5; cursor: default; }
 .link.danger { color: var(--accent-ink); display: inline-flex; align-items: center; gap: 4px; }
-#ctx { position: absolute; z-index: 16; padding: 4px; border-radius: 12px; }
-#ctx button { border: 0; background: none; color: var(--ink); padding: 9px 14px; border-radius: 9px; cursor: pointer; display: block; width: 100%; text-align: left; white-space: nowrap; }
-#ctx button:hover { background: var(--hover); }
 
 /* ---- sign in ---- */
 /* phones first: the food photo fills the screen and the form is a white sheet anchored to the bottom.
@@ -375,16 +384,23 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
   #gallery .nav { top: 56%; }
   #facts { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   /* mid-drag the sheets follow the finger exactly; the easing is only for the snap */
-  html.sheet-drag aside, html.sheet-drag #detail, html.sheet-drag #dock, html.sheet-drag #recenter { transition: none; }
-  /* the search bar and the locate button ride on top of the results sheet; locate sits a row above the 50px bar so the heart can't cover it */
-  #dock { bottom: calc(var(--sheet) + 12px); transition: bottom .28s cubic-bezier(.2,.8,.2,1), opacity .18s; }
-  #recenter { bottom: calc(var(--sheet) + 12px + 50px + 12px); transition: bottom .28s cubic-bezier(.2,.8,.2,1), right .2s; }
-  .app.has-detail #ctl, .app.has-detail #recenter { right: var(--gap); }
-  /* sheet all the way up: the map is gone, so are its controls; the search bar stays, now at the top */
-  .app.sheet-full #ctl, .app.sheet-full #recenter, .app.sheet-full #areaBar { opacity: 0; pointer-events: none; }
-  .app.has-detail #dock, .app.has-detail #recenter { opacity: 0; pointer-events: none; }
-  #ctl { transition: right .2s, opacity .18s; }
-  #areaBar { transition: opacity .18s, transform .18s; }
+  html.sheet-drag aside, html.sheet-drag #detail, html.sheet-drag #recenter, html.sheet-drag #listsWrap { transition: none; }
+  /* the search bar spans the top under the status bar; its quick searches scroll sideways to the screen edges */
+  #dock { top: calc(var(--sat) + 10px); left: var(--gap); right: var(--gap); max-width: none; align-items: stretch; transition: opacity .18s; }
+  #bar, #quick { width: auto; }
+  #quick { margin: -2px calc(-1 * var(--gap)) -8px; padding: 2px var(--gap) 8px; }
+  #areaBar { align-self: center; }
+  .app.has-detail #dock { right: var(--gap); }
+  /* pinch to zoom on a phone; the buttons would sit under the search bar */
+  #ctl { display: none; }
+  /* the locate button and the heart above it ride on top of the results sheet */
+  #recenter { bottom: calc(var(--sheet) + 12px); transition: bottom .28s cubic-bezier(.2,.8,.2,1), right .2s, opacity .18s; }
+  #listsWrap { bottom: calc(var(--sheet) + 12px + 42px + 10px); transition: bottom .28s cubic-bezier(.2,.8,.2,1), right .2s, opacity .18s; }
+  #listsPanel { max-height: min(60vh, calc(100dvh - var(--sheet) - 190px)); }
+  .app.has-detail #recenter, .app.has-detail #listsWrap { right: var(--gap); }
+  /* sheet all the way up: the map is gone, so are its controls; the search bar stays at the top */
+  .app.sheet-full #recenter, .app.sheet-full #listsWrap, .app.sheet-full #quick, .app.sheet-full #areaBar { opacity: 0; pointer-events: none; }
+  .app.has-detail #dock, .app.has-detail #recenter, .app.has-detail #listsWrap { opacity: 0; pointer-events: none; }
 }
 
 /* ---- public pages: landing, city and cuisine hubs ---- */
@@ -973,3 +989,41 @@ textarea.cms-input { height: auto; padding: 8px 10px; resize: vertical; }
 .cms-advanced[open] { display: grid; gap: 12px; }
 .cms-preview-banner { position: sticky; top: 56px; z-index: 50; padding: 10px 16px; text-align: center; font-size: 14px; font-weight: 600; background: var(--ink); color: var(--bg); }
 .cms-preview-banner a { color: #ffb4a6; }
+
+/* ---- /account ---- */
+/* the dropdown's way in: a full-width row between the plan and sign out */
+.account-link { display: flex; align-items: center; gap: 12px; margin: 14px -8px 0; padding: 10px 8px; border-radius: 12px; color: var(--ink); text-decoration: none; }
+.account-link:hover { background: var(--hover); }
+.account-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.account-link-icon { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(255,99,71,.12); color: var(--accent-ink); }
+.account-link-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.account-link-text b { font-weight: 700; }
+.account-link-text .sub { margin-top: 0; }
+.account-link > svg { flex: none; color: var(--muted); transition: transform .15s; }
+.account-link:hover > svg { transform: translateX(2px); }
+.acct main { padding-bottom: 56px; }
+.acct .site-hero { padding-bottom: 20px; }
+.acct .site-hero h1 { font-size: clamp(30px, 5vw, 44px); }
+.acct-banner { max-width: 760px; margin: 0 0 16px; padding: 10px 14px; border-radius: 12px; background: var(--hover); }
+.acct-grid { display: grid; gap: 16px; max-width: 760px; }
+.acct-card { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); }
+.acct-card-head { display: flex; flex-direction: column; gap: 4px; }
+.acct-card.danger .h2 { color: var(--accent-ink); }
+.acct-form { display: flex; flex-direction: column; gap: 12px; }
+.acct-pair { display: grid; gap: 12px; }
+.acct-submit { align-self: flex-start; }
+.acct-submit:disabled, .acct-danger:disabled { opacity: .5; cursor: default; }
+.acct-danger { color: var(--accent-ink); border-color: rgba(217,71,46,.35); }
+.acct-danger:hover:not(:disabled) { background: rgba(255,99,71,.08); }
+.acct-row-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.acct-plan { display: flex; align-items: center; gap: 10px; }
+.acct-card .upgrade-list { margin: -4px 0 0; }
+.acct-rows { display: grid; margin: 0; border-top: 1px solid var(--line); }
+.acct-rows > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.acct-rows dd { margin: 0; text-align: right; }
+.acct-actions { display: flex; flex-direction: column; gap: 6px; }
+.acct-actions .upgrade-form { margin-top: 0; align-self: flex-start; }
+.acct-actions .upgrade-form .btn { padding: 0 18px; }
+@media (min-width: 640px) {
+  .acct-pair { grid-template-columns: 1fr 1fr; }
+}

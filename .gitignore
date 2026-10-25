@@ -14,3 +14,6 @@ coords-cache.json
 .vercel
 # copied from node_modules on install (scripts/copy-maplibre-worker.mjs)
 public/maplibre-gl-worker.mjs
+
+# raw page snapshots from SEO audits
+tabedog.com-audit/raw/

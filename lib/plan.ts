@@ -15,6 +15,16 @@ export const PREMIUM_FEATURES: Record<Feature, { title: string; blurb: string }>
 
 export const PLAN_LABEL: Record<Plan, string> = { free: "Free", premium: "Premium" };
 
+/** What to tell someone coming back from Stripe (Checkout or the portal), keyed by the ?billing= value. */
+export const BILLING_NOTES: Record<string, string> = {
+  success: "Welcome to Premium! Your lists are ready.",
+  pending: "Payment received. Premium switches on in a moment; reload if you don’t see it.",
+  cancel: "Checkout cancelled. You’re still on the free plan.",
+  error: "Something went wrong talking to Stripe. Please try again.",
+  unconfigured: "Billing isn’t set up on this server yet.",
+  nocustomer: "No subscription found for this account.",
+};
+
 export type Profile = { plan: Plan; premiumUntil: string | null };
 
 /** Resolves a stored profile to the plan in force right now (an expired premium is free). */
