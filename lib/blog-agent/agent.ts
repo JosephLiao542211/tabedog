@@ -22,9 +22,17 @@ export const blogAgent = new ToolLoopAgent({
   stopWhen: isStepCount(40),
   maxOutputTokens: 32000, // thinking counts toward the limit, and a full draft goes out as one presentDraft call
   providerOptions: { anthropic: { effort: "high" } },
-  callOptionsSchema: z.object({ model: z.enum(Object.keys(AGENT_MODELS) as [AgentModel, ...AgentModel[]]).optional() }),
+  callOptionsSchema: z.object({
+    model: z.enum(Object.keys(AGENT_MODELS) as [AgentModel, ...AgentModel[]]).optional(),
+    effort: z.enum(["low", "medium", "high"]).optional(), // lowered when one step keeps outrunning the function time limit
+  }),
   // rebuilt per call so "today" and "ratings as of" stay current on a long-lived instance
-  prepareCall: ({ options, ...settings }) => ({ ...settings, instructions: instructions(), ...(options?.model ? { model: anthropic(options.model) } : {}) }),
+  prepareCall: ({ options, ...settings }) => ({
+    ...settings,
+    instructions: instructions(),
+    ...(options?.model ? { model: anthropic(options.model) } : {}),
+    ...(options?.effort ? { providerOptions: { ...settings.providerOptions, anthropic: { ...settings.providerOptions?.anthropic, effort: options.effort } } } : {}),
+  }),
 });
 
 export type BlogAgentMessage = InferAgentUIMessage<typeof blogAgent>;

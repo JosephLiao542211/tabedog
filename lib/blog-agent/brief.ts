@@ -44,3 +44,10 @@ export function briefMessage(b: Brief) {
   ];
   return lines.filter((l): l is string => typeof l === "string" && l !== "").join("\n");
 }
+
+/** The first message for a queued one-line prompt. Nobody is watching, so the agent decides everything itself. */
+export function queueMessage(prompt: string) {
+  return `${briefMessage({ idea: prompt, length: "Standard, about 1,500 words" })}
+
+This runs unattended from the publishing queue: nobody can answer questions or review the research, so make every choice yourself, check our published posts so you don't repeat one, and finish by calling presentDraft.`;
+}

@@ -12,10 +12,10 @@ export function Cover({ src, alt, sizes, priority = false }: { src: string; alt:
   return <Image src={src} alt={alt} fill sizes={sizes} priority={priority} unoptimized={!optimizable(src)} className="blog-img" />;
 }
 
-/** An uploaded photo, or the TabeDog dog on a color picked from the name (each pen name keeps its color). */
-export function Avatar({ src, name, size = 28 }: { src: string | null; name: string; size?: number }) {
+/** An uploaded photo, or the TabeDog dog on the post's stored color (older rows without one: a color picked from the name). */
+export function Avatar({ src, color, name, size = 28 }: { src: string | null; color?: string | null; name: string; size?: number }) {
   if (src) return <Image src={src} alt="" width={size} height={size} unoptimized={!optimizable(src)} className="blog-avatar" />;
-  return <span className="blog-avatar blog-avatar-dog" style={{ width: size, height: size, background: avatarColor(name) }} aria-hidden="true"><Logo size={Math.round(size * 0.62)} /></span>;
+  return <span className="blog-avatar blog-avatar-dog" style={{ width: size, height: size, background: color || avatarColor(name) }} aria-hidden="true"><Logo size={Math.round(size * 0.62)} /></span>;
 }
 
 export function Masthead({ title = BLOG.name, lead = BLOG.tagline, active }: { title?: string; lead?: string; active?: string }) {
@@ -33,11 +33,11 @@ export function Masthead({ title = BLOG.name, lead = BLOG.tagline, active }: { t
   );
 }
 
-function Author({ post }: { post: Pick<PostCard, "slug" | "author_name" | "author_role" | "author_avatar"> }) {
+function Author({ post }: { post: Pick<PostCard, "slug" | "author_name" | "author_role" | "author_avatar" | "author_color"> }) {
   const { name, role } = authorOf(post);
   return (
     <div className="blog-author">
-      <Avatar src={post.author_avatar} name={name} />
+      <Avatar src={post.author_avatar} color={post.author_color} name={name} />
       <div>
         <span className="blog-author-name">{name}</span>
         {role && <span className="blog-author-role">{role}</span>}
@@ -92,10 +92,10 @@ export function Pager({ page, pages, base }: { page: number; pages: number; base
   );
 }
 
-export function Byline({ name, role, avatar }: { name: string; role: string; avatar: string | null }) {
+export function Byline({ name, role, avatar, color }: { name: string; role: string; avatar: string | null; color: string | null }) {
   return (
     <div className="post-byline">
-      <Avatar src={avatar} name={name} size={40} />
+      <Avatar src={avatar} color={color} name={name} size={40} />
       <div>
         <span className="post-byline-name">By {name}</span>
         {role && <span className="post-byline-role">{role}</span>}

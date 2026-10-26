@@ -18,6 +18,7 @@ export type Post = {
   author_name: string;
   author_role: string;
   author_avatar: string | null;
+  author_color: string | null;    // the dog avatar's background when there's no photo
   seo_title: string;
   seo_description: string;
   focus_keyword: string;
@@ -30,9 +31,18 @@ export type Post = {
   updated_at: string;
 };
 
+/** What the dashboard saves: a post without its timestamps; a null id inserts. */
+export type PostInput = Omit<Post, "id" | "created_at" | "updated_at"> & { id: string | null };
+
+export const emptyPost = (): PostInput => ({
+  id: null, slug: "", title: "", excerpt: "", content: "", topic: TOPICS[0].slug, tags: [], cover_url: null, cover_alt: "",
+  author_name: "", author_role: "", author_avatar: null, author_color: null,
+  seo_title: "", seo_description: "", focus_keyword: "", canonical_url: null, noindex: false, featured: false, status: "draft", published_at: null,
+});
+
 /** The fields a list or card needs; keeps index queries from pulling every body. */
-export type PostCard = Pick<Post, "id" | "slug" | "title" | "excerpt" | "topic" | "cover_url" | "cover_alt" | "author_name" | "author_role" | "author_avatar" | "published_at" | "updated_at" | "featured">;
-export const CARD_COLUMNS = "id, slug, title, excerpt, topic, cover_url, cover_alt, author_name, author_role, author_avatar, published_at, updated_at, featured";
+export type PostCard = Pick<Post, "id" | "slug" | "title" | "excerpt" | "topic" | "cover_url" | "cover_alt" | "author_name" | "author_role" | "author_avatar" | "author_color" | "published_at" | "updated_at" | "featured">;
+export const CARD_COLUMNS = "id, slug, title, excerpt, topic, cover_url, cover_alt, author_name, author_role, author_avatar, author_color, published_at, updated_at, featured";
 
 // Edit freely: a topic is a slug stored on the post plus a label and a one-line pitch for its page.
 export const TOPICS = [
@@ -53,8 +63,10 @@ export const BLOG = {
   defaultAuthor: { name: OPERATOR.name, role: `Founder, ${SITE.name}` },
 } as const;
 
-// Bylines rotate between pen names. A post signed by the founder (or by nobody) shows one picked from its
-// slug, so it never changes between renders. Type a name in the editor to override it.
+// Bylines rotate between pen names. Saving a post that's unsigned (or signed by the founder) stores a pen
+// name and an avatar color picked at random from the ones the latest posts didn't use (lib/blog-write.ts),
+// so neighbours differ. authorOf still falls back to one hashed from the slug for anything unsaved.
+// The migration that spread these over older posts copies both lists; keep them in sync.
 export const PEN_NAMES = [
   { name: "Hachi", role: "Food editor, TabeDog" },
   { name: "Mochi", role: "Ramen & noodles, TabeDog" },
@@ -75,10 +87,12 @@ export const seedIndex = (seed: string, n: number) => {
 };
 export const avatarColor = (seed: string) => AVATAR_COLORS[seedIndex(seed, AVATAR_COLORS.length)];
 
+/** True when the byline should be a pen name: nobody signed it, or the founder did. */
+export const wantsPenName = (name: string) => !name.trim() || name.trim() === OPERATOR.name;
+
 /** The name and role shown on a post. */
 export function authorOf(p: Pick<Post, "slug" | "author_name" | "author_role">): { name: string; role: string } {
-  const name = p.author_name.trim();
-  if (name && name !== OPERATOR.name) return { name, role: p.author_role };
+  if (!wantsPenName(p.author_name)) return { name: p.author_name.trim(), role: p.author_role };
   return PEN_NAMES[seedIndex(p.slug || "tabedog", PEN_NAMES.length)];
 }
 

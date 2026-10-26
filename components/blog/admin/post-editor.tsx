@@ -6,19 +6,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { MDXEditorMethods } from "@mdxeditor/editor";
-import { BLOG, TOPICS, authorOf, metaDescription, metaTitle, postUrl, readingMinutes, slugify, wordCount, type Post } from "@/lib/blog";
+import { AVATAR_COLORS, BLOG, TOPICS, authorOf, emptyPost, metaDescription, metaTitle, postUrl, readingMinutes, slugify, wordCount, type Post, type PostInput } from "@/lib/blog";
 import { seoChecks, seoScore } from "@/lib/blog-seo";
 import { SITE } from "@/lib/seo";
-import { deletePost, savePost, type PostInput } from "@/app/admin/blog/actions";
+import { deletePost, savePost } from "@/app/admin/blog/actions";
 import { uploadImage } from "./upload";
 
 const MdEditor = dynamic(() => import("./md-editor"), { ssr: false, loading: () => <div className="cms-md cms-md-loading">Loading editor…</div> });
-
-export const emptyPost = (): PostInput => ({
-  id: null, slug: "", title: "", excerpt: "", content: "", topic: TOPICS[0].slug, tags: [], cover_url: null, cover_alt: "",
-  author_name: "", author_role: "", author_avatar: null,
-  seo_title: "", seo_description: "", focus_keyword: "", canonical_url: null, noindex: false, featured: false, status: "draft", published_at: null,
-});
 
 const toInput = ({ created_at: _c, updated_at: _u, ...p }: Post): PostInput => p;
 // <input type="datetime-local"> speaks local wall time without a zone
@@ -203,10 +197,21 @@ export function PostEditor({ initial }: { initial: Post | null }) {
             <label className="cms-field">
               <span className="cms-label">Name</span>
               <input className="cms-input" value={post.author_name} placeholder={`Pen name: ${authorOf({ ...post, slug, author_name: "" }).name}`} onChange={(e) => set("author_name", e.target.value)} />
-              <span className="cms-hint">Leave empty (or as {BLOG.defaultAuthor.name}) for a rotating pen name, picked from the URL.</span>
+              <span className="cms-hint">Leave empty (or as {BLOG.defaultAuthor.name}) and saving picks a pen name the latest posts didn’t use.</span>
             </label>
             <label className="cms-field"><span className="cms-label">Role</span><input className="cms-input" value={post.author_role} placeholder={authorOf({ ...post, slug, author_name: "" }).role} onChange={(e) => set("author_role", e.target.value)} /></label>
             <ImageField label="Avatar" value={post.author_avatar} onChange={(v) => set("author_avatar", v)} />
+            {!post.author_avatar && (
+              <div className="cms-field">
+                <span className="cms-label">Avatar color</span>
+                <div className="cms-swatches" role="radiogroup" aria-label="Avatar color">
+                  <button type="button" role="radio" aria-checked={!post.author_color} className={`cms-swatch auto${post.author_color ? "" : " on"}`} onClick={() => set("author_color", null)} title="Pick one on save">Auto</button>
+                  {AVATAR_COLORS.map((c) => (
+                    <button type="button" key={c} role="radio" aria-checked={post.author_color === c} aria-label={c} className={`cms-swatch${post.author_color === c ? " on" : ""}`} style={{ background: c }} onClick={() => set("author_color", c)} />
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           {post.id && (

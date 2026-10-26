@@ -5,7 +5,8 @@ import { DraftAgent } from "@/components/blog/admin/draft-agent";
 
 export const dynamic = "force-dynamic";
 
-export default async function DraftAgentPage() {
+export default async function DraftAgentPage({ searchParams }: { searchParams: Promise<{ run?: string }> }) {
   await requireBlogAdmin("/admin/blog/agent");
-  return <DraftAgent cities={CITIES.map((c) => ({ slug: c.slug, name: c.name }))} models={AGENT_MODELS} defaultModel={DEFAULT_MODEL} apiKeySet={!!process.env.ANTHROPIC_API_KEY} />;
+  const { run } = await searchParams;
+  return <DraftAgent cities={CITIES.map((c) => ({ slug: c.slug, name: c.name }))} models={AGENT_MODELS} defaultModel={DEFAULT_MODEL} apiKeySet={!!process.env.ANTHROPIC_API_KEY} initialRun={run ?? null} />;
 }

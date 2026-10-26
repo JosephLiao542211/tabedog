@@ -61,7 +61,7 @@ export function PostView({ post, related, banner }: { post: Post; related: PostC
             <h1 className="post-title">{post.title || "Untitled"}</h1>
             {post.excerpt && <p className="post-dek">{post.excerpt}</p>}
             <div className="post-byline-row">
-              <Byline name={author} role={role} avatar={post.author_avatar} />
+              <Byline name={author} role={role} avatar={post.author_avatar} color={post.author_color} />
               <Share url={url} title={post.title} />
             </div>
           </header>

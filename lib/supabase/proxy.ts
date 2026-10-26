@@ -7,6 +7,8 @@ import { GUEST_COOKIE } from "@/lib/guest";
 const PUBLIC_API = [
   /^\/api\/billing\/webhook$/, // Stripe calls the webhook without a session
   /^\/api\/landing-spots$/, // the pins behind the public landing page: one cached search, no user input
+  /^\/api\/cron\//, // pg_cron pings; the route checks CRON_SECRET
+  /^\/api\/admin\/blog-agent\/runs\/[\w-]+$/, // a run handing itself to a fresh invocation (CRON_SECRET); everything else there needs an admin session
 ];
 
 // what a guest (no account, "Continue as guest") may also call: the map's read-only APIs
