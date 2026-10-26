@@ -14,7 +14,7 @@ export default async function AdminPostsPage({ searchParams }: { searchParams: P
     <main className="cms-main">
       <div className="cms-head">
         <h1>Posts</h1>
-        <Link href="/admin/blog/new" className="cms-btn">New post</Link>
+        <div className="cms-row"><Link href="/admin/blog/agent" className="cms-btn-ghost">Draft with AI</Link><Link href="/admin/blog/new" className="cms-btn">New post</Link></div>
       </div>
       <nav className="cms-tabs">
         <Link href="/admin/blog" aria-current={!filter ? "page" : undefined}>All <b>{all.length}</b></Link>

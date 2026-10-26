@@ -31,7 +31,7 @@ async function fetchHtml(url: string, ua: string) {
 }
 
 // ---------- listing scrape (mobile markup) ----------
-type ListItem = Omit<Restaurant, "lat" | "lng" | "address" | "hours" | "pay" | "photos" | "access" | "distM" | "open">;
+export type ListItem = Omit<Restaurant, "lat" | "lng" | "address" | "hours" | "pay" | "photos" | "access" | "distM" | "open">;
 
 function thumb(img: ReturnType<ReturnType<typeof cheerio.load>>): string | null {
   const u = img.attr("data-lazy") || img.attr("data-src") || img.attr("src") || "";
@@ -289,4 +289,56 @@ export async function getReviews(url: string): Promise<ReviewsResponse> {
     });
     return { url: url + "dtlrvwlst/", items };
   });
+}
+
+// ---------- one restaurant in full, plus lookup by name (for the blog agent) ----------
+const PROFILE_TTL = 3 * 24 * 60 * 60; // seconds
+
+export type RestaurantProfile = {
+  url: string; name: string; rating: number | null; reviews: number;
+  closed: boolean;                       // permanently closed
+  budget: { dinner: string; lunch: string };
+  station: string; lat: number | null; lng: number | null; pay: Pay | null;
+  facts: Record<string, string>;         // every row of the info table: hours, seats, reservations, smoking, awards…
+  photos: string[];
+};
+
+/** Everything the detail page says about one restaurant. */
+export async function getRestaurant(url: string): Promise<RestaurantProfile> {
+  if (!isRestaurantUrl(url)) throw new TabelogError("not a Tabelog restaurant URL", url);
+  return cached<RestaurantProfile>(`profile:v1:${url.match(/(\d+)\/$/)![1]}`, PROFILE_TTL, async () => {
+    const html = await fetchHtml(url, DESKTOP_UA);
+    const $ = cheerio.load(html);
+    const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+    const facts: Record<string, string> = {};
+    $("th").each((_, th) => {
+      const k = clean($(th).text()), v = clean($(th).next("td").text()).replace(/Show larger map.*$|Hours and closed days may change.*$/i, "").trim();
+      if (k && v && v !== "-" && v !== "−" && !(k in facts)) facts[k] = v.slice(0, 600);
+    });
+    const payText = facts["Payment methods"] || "";
+    const [dinner = "", lunch = ""] = $(".rdheader-budget__price-target").map((_, e) => clean($(e).text())).get().map((v) => (v === "-" ? "" : v));
+    const m = html.match(/center=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    return {
+      url,
+      name: clean($(".rdheader-rstname h2, .rdheader-rstname").first().text()).replace(/^閉店\s*/, ""),
+      rating: parseFloat(clean($(".rdheader-rating__score-val").first().text())) || null,
+      reviews: Number(clean($(".rdheader-rating__review").first().text()).replace(/[^\d]/g, "")) || 0,
+      closed: /permanently closed/i.test(facts["Restaurant name"] || "") || $(".rdheader-rstname").text().includes("閉店"),
+      budget: { dinner, lunch },
+      station: (clean($(".rdheader-subinfo__item--station .rdheader-subinfo__item-text").first().text()).match(/^.*?Sta\./) || [""])[0],
+      lat: m ? Number(m[1]) : null, lng: m ? Number(m[2]) : null,
+      pay: payText ? {
+        card: /credit cards? accepted/i.test(payText), emoney: /electronic money accepted/i.test(payText),
+        qr: /qr code payments? accepted/i.test(payText), cash: !/cash(?:less| not accepted)/i.test(payText),
+      } : null,
+      facts,
+      photos: $(".rstdtl-top-postphoto__item img").map((_, i) => bigPhoto($(i).attr("src"))).get().filter((p): p is string => !!p).slice(0, 10),
+    };
+  });
+}
+
+/** Restaurants whose name matches, best match first (Tabelog's own keyword search). */
+export async function findByName(name: string): Promise<ListItem[]> {
+  const url = `https://s.tabelog.com/en/rstLst/?sw=${encodeURIComponent(name)}`;
+  return cached<ListItem[]>(`byname:${name.toLowerCase()}`, LIST_TTL, async () => parseList(await fetchHtml(url, MOBILE_UA)));
 }

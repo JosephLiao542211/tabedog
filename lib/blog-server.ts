@@ -58,6 +58,15 @@ export async function allPublished(): Promise<Pick<Post, "slug" | "title" | "exc
 const adminEmails = () =>
   (process.env.BLOG_ADMIN_EMAILS || OPERATOR.email).split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
 
+/** The signed-in admin, or null. For route handlers, which answer 404 themselves instead of redirecting. */
+export async function blogAdmin(): Promise<{ email: string; admin: SupabaseClient } | null> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const email = user?.email?.toLowerCase() ?? "";
+  if (!user?.email_confirmed_at || !adminEmails().includes(email)) return null;
+  return { email, admin: createAdminClient() };
+}
+
 /** The signed-in admin's email, or a redirect to sign in, or a 404 for everyone else (the dashboard doesn't advertise itself). */
 export async function requireBlogAdmin(next = "/admin/blog"): Promise<{ email: string; admin: SupabaseClient }> {
   const supabase = await createClient();

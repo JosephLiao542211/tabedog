@@ -13,6 +13,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <Link href="/admin/blog" className="site-brand"><Logo size={22} /><span className="site-brand-name">TabeDog</span><span className="cms-top-tag">CMS</span></Link>
         <nav>
           <Link href="/admin/blog">Posts</Link>
+          <Link href="/admin/blog/agent">Draft with AI</Link>
           <Link href="/blog" target="_blank">View blog ↗</Link>
         </nav>
       </header>
