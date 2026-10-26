@@ -6,6 +6,8 @@ import { CITIES, CUISINES, SITE, allCityCuisinePages, cityCuisineUrl, cityUrl, c
 export const revalidate = 3600; // blog posts appear here as soon as they are published (see app/admin/blog/actions.ts)
 
 const CONTENT_UPDATED = new Date("2026-10-20");
+// Next writes sitemap URLs into the XML verbatim, so a cover URL with a query string (`?a=1&b=2`) breaks the whole file
+const xmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const posts = (await allPublished()).filter((p) => !p.noindex);
@@ -18,6 +20,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...allCityCuisinePages().map(({ city, cuisine }) => ({ url: `${SITE.url}${cityCuisineUrl(city.slug, cuisine.slug)}`, lastModified: CONTENT_UPDATED, changeFrequency: "daily" as const, priority: 0.7 })),
     { url: `${SITE.url}/blog`, lastModified: blogUpdated, changeFrequency: "weekly", priority: 0.8 },
     ...TOPICS.map((t) => ({ url: `${SITE.url}${topicUrl(t.slug)}`, lastModified: blogUpdated, changeFrequency: "weekly" as const, priority: 0.5 })),
-    ...posts.map((p) => ({ url: `${SITE.url}${postUrl(p.slug)}`, lastModified: new Date(p.updated_at), changeFrequency: "monthly" as const, priority: 0.7, ...(p.cover_url && { images: [p.cover_url] }) })),
+    ...posts.map((p) => ({ url: `${SITE.url}${postUrl(p.slug)}`, lastModified: new Date(p.updated_at), changeFrequency: "monthly" as const, priority: 0.7, ...(p.cover_url && { images: [xmlEscape(p.cover_url)] }) })),
   ];
 }
