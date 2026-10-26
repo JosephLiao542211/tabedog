@@ -1,8 +1,8 @@
 // Pieces shared by the blog index, topic pages and posts: masthead, topic nav, cards, byline, share links, pager.
 import Image from "next/image";
 import Link from "next/link";
-import { BLOG, TOPICS, formatDate, postUrl, topicName, topicUrl, type PostCard } from "@/lib/blog";
-import { SITE } from "@/lib/seo";
+import { BLOG, TOPICS, authorOf, avatarColor, formatDate, postUrl, topicName, topicUrl, type PostCard } from "@/lib/blog";
+import { Logo } from "@/components/icons";
 
 /** Supabase Storage images go through next/image; anything else pasted in (and the local dev stack, a private IP next/image refuses) is shown as-is. */
 const STORAGE = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -12,9 +12,10 @@ export function Cover({ src, alt, sizes, priority = false }: { src: string; alt:
   return <Image src={src} alt={alt} fill sizes={sizes} priority={priority} unoptimized={!optimizable(src)} className="blog-img" />;
 }
 
+/** An uploaded photo, or the TabeDog dog on a color picked from the name (each pen name keeps its color). */
 export function Avatar({ src, name, size = 28 }: { src: string | null; name: string; size?: number }) {
   if (src) return <Image src={src} alt="" width={size} height={size} unoptimized={!optimizable(src)} className="blog-avatar" />;
-  return <span className="blog-avatar blog-avatar-initial" style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden="true">{(name || SITE.name).trim()[0]}</span>;
+  return <span className="blog-avatar blog-avatar-dog" style={{ width: size, height: size, background: avatarColor(name) }} aria-hidden="true"><Logo size={Math.round(size * 0.62)} /></span>;
 }
 
 export function Masthead({ title = BLOG.name, lead = BLOG.tagline, active }: { title?: string; lead?: string; active?: string }) {
@@ -32,14 +33,14 @@ export function Masthead({ title = BLOG.name, lead = BLOG.tagline, active }: { t
   );
 }
 
-function Author({ post }: { post: Pick<PostCard, "author_name" | "author_role" | "author_avatar"> }) {
-  const name = post.author_name || BLOG.defaultAuthor.name;
+function Author({ post }: { post: Pick<PostCard, "slug" | "author_name" | "author_role" | "author_avatar"> }) {
+  const { name, role } = authorOf(post);
   return (
     <div className="blog-author">
       <Avatar src={post.author_avatar} name={name} />
       <div>
         <span className="blog-author-name">{name}</span>
-        {post.author_role && <span className="blog-author-role">{post.author_role}</span>}
+        {role && <span className="blog-author-role">{role}</span>}
       </div>
     </div>
   );

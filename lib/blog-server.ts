@@ -38,12 +38,21 @@ export async function getPost(slug: string): Promise<Post | null> {
   return must(await db().from("posts").select("*").eq("slug", slug).maybeSingle(), "get", null) as Post | null;
 }
 
-/** Same topic first, then the newest of the rest. */
-export async function relatedPosts(post: Pick<Post, "id" | "topic">, n = 3): Promise<PostCard[]> {
-  const same = must(await db().from("posts").select(CARD_COLUMNS).eq("topic", post.topic).neq("id", post.id).order("published_at", { ascending: false }).limit(n), "related", []) as unknown as PostCard[];
-  if (same.length >= n) return same;
-  const rest = must(await db().from("posts").select(CARD_COLUMNS).neq("topic", post.topic).order("published_at", { ascending: false }).limit(n - same.length), "related", []) as unknown as PostCard[];
-  return [...same, ...rest];
+const STOP = new Set("the a an and or of in to for on at with how what why where best your from is are by vs guide japan japanese".split(" "));
+const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)));
+
+/** The posts most like this one: shared tags count most, then same topic, then shared title words; newer wins ties. */
+export async function relatedPosts(post: Pick<Post, "id" | "topic" | "tags" | "title">, n = 6): Promise<PostCard[]> {
+  const pool = must(await db().from("posts").select(`${CARD_COLUMNS}, tags`).neq("id", post.id).order("published_at", { ascending: false }).limit(60), "related", []) as unknown as (PostCard & { tags: string[] })[];
+  const tags = new Set(post.tags.map((t) => t.toLowerCase()));
+  const title = words(post.title);
+  const score = (p: PostCard & { tags: string[] }) =>
+    (p.tags ?? []).filter((t) => tags.has(t.toLowerCase())).length * 3 + (p.topic === post.topic ? 2 : 0) + [...words(p.title)].filter((w) => title.has(w)).length;
+  return pool
+    .map((p, i) => ({ p, s: score(p), i }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .slice(0, n)
+    .map(({ p: { tags: _t, ...card } }) => card);
 }
 
 /** Everything the sitemap and feed need. Never throws: a broken blog must not break the sitemap. */

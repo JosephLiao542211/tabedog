@@ -12,7 +12,9 @@ import { topRated } from "../rankings";
 import { CITIES, CUISINES, cityBySlug, cuisineBySlug } from "../seo";
 import { findByName, getRestaurant, getReviews, isRestaurantUrl, search } from "../tabelog";
 import { searchPhotos, tabelogPhotos } from "../photos";
-import { TOPICS, slugify } from "../blog";
+import { TOPICS, plainText, slugify } from "../blog";
+import { allPublished } from "../blog-server";
+import { styleProblems } from "./style";
 import { seoChecks } from "../blog-seo";
 import type { Pay } from "../types";
 
@@ -166,6 +168,15 @@ export const blogTools = {
   }),
 
   // Anthropic runs this search server-side; it must be enabled in the Console (Settings → Privacy)
+  listBlogPosts: tool({
+    description: "Every post already published on the TabeDog blog (title, URL path, topic, summary), so you can link to related ones and avoid repeating a post that exists.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const posts = (await allPublished()).filter((p) => !p.noindex && p.published_at && new Date(p.published_at) <= new Date());
+      return { posts: posts.map((p) => ({ title: p.title, path: `/blog/${p.slug}`, topic: p.topic, summary: (p.excerpt || p.seo_description).slice(0, 200) })) };
+    },
+  }),
+
   web_search: anthropic.tools.webSearch_20260318({ maxUses: 6 }),
 
   presentDraft: tool({
@@ -178,6 +189,17 @@ export const blogTools = {
       for (const s of used) if (!slots.has(s)) problems.push(`Body uses photo:${s} but no photo has that slot.`);
       if (!slots.has(d.coverSlot)) problems.push(`coverSlot "${d.coverSlot}" isn't one of the photos.`);
       if (/^#\s/m.test(d.content)) problems.push("Remove the H1 from the body; the title is the H1.");
+      if (used.includes(d.coverSlot)) problems.push(`The cover (photo:${d.coverSlot}) is shown above the title already; remove it from the body.`);
+      const repeatedSlots = used.filter((s, i) => used.indexOf(s) !== i);
+      if (repeatedSlots.length) problems.push(`Photo slots used more than once in the body: ${[...new Set(repeatedSlots)].join(", ")}.`);
+      const urls = d.photos.map((p) => p.url);
+      const sameUrl = d.photos.filter((p, i) => urls.indexOf(p.url) !== i).map((p) => p.slot);
+      if (sameUrl.length) problems.push(`These slots reuse a photo already used by another slot: ${sameUrl.join(", ")}. Pick different photos.`);
+      const hs = [...d.content.matchAll(/^#{2,3}\s+(.+)$/gm)].map((m) => plainText(m[1]).toLowerCase());
+      if (hs.includes(plainText(d.title).toLowerCase())) problems.push("A heading repeats the title; rename it.");
+      const dupHeads = hs.filter((h, i) => hs.indexOf(h) !== i);
+      if (dupHeads.length) problems.push(`Duplicate headings: ${[...new Set(dupHeads)].join(", ")}.`);
+      problems.push(...styleProblems([d.title, d.excerpt, d.seoTitle, d.content, ...d.photos.flatMap((p) => [p.alt, p.caption])].join("\n\n")));
       for (const r of d.restaurants) if (!isRestaurantUrl(r.url)) problems.push(`${r.name}: "${r.url}" isn't a Tabelog restaurant URL from your research.`);
       const cover = d.photos.find((p) => p.slot === d.coverSlot);
       const checks = seoChecks({

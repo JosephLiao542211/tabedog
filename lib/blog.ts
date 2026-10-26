@@ -53,6 +53,42 @@ export const BLOG = {
   defaultAuthor: { name: OPERATOR.name, role: `Founder, ${SITE.name}` },
 } as const;
 
+// Bylines rotate between pen names. A post signed by the founder (or by nobody) shows one picked from its
+// slug, so it never changes between renders. Type a name in the editor to override it.
+export const PEN_NAMES = [
+  { name: "Hachi", role: "Food editor, TabeDog" },
+  { name: "Mochi", role: "Ramen & noodles, TabeDog" },
+  { name: "Kuro", role: "Izakaya & nightlife, TabeDog" },
+  { name: "Shiro", role: "Sushi & seafood, TabeDog" },
+  { name: "Kuma", role: "Travel & neighborhoods, TabeDog" },
+  { name: "Pochi", role: "Cafes & sweets, TabeDog" },
+] as const;
+
+// background colors for the dog-logo avatar; each one keeps white text readable
+export const AVATAR_COLORS = ["#ff6347", "#2f7de1", "#2e9e6b", "#8a5cd6", "#e08a1e", "#d6457a", "#1f8a99", "#5b6b2e"] as const;
+
+/** Small stable hash, so a seed always lands on the same pen name or color. */
+export const seedIndex = (seed: string, n: number) => {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return (h >>> 0) % n;
+};
+export const avatarColor = (seed: string) => AVATAR_COLORS[seedIndex(seed, AVATAR_COLORS.length)];
+
+/** The name and role shown on a post. */
+export function authorOf(p: Pick<Post, "slug" | "author_name" | "author_role">): { name: string; role: string } {
+  const name = p.author_name.trim();
+  if (name && name !== OPERATOR.name) return { name, role: p.author_role };
+  return PEN_NAMES[seedIndex(p.slug || "tabedog", PEN_NAMES.length)];
+}
+
+/** The body without any image that repeats the cover (the cover already sits above the post). */
+export function withoutCover(md: string, cover: string | null) {
+  if (!cover) return md;
+  const esc = cover.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return md.replace(new RegExp(`^[ \\t]*!\\[[^\\]]*\\]\\(<?${esc}>?(?:\\s+"[^"]*")?\\)[ \\t]*\\n?`, "gm"), "").replace(/\n{3,}/g, "\n\n");
+}
+
 export const postUrl = (slug: string) => `/blog/${slug}`;
 export const topicUrl = (slug: string) => `/blog/topic/${slug}`;
 
@@ -95,6 +131,19 @@ export function headings(md: string) {
     out.push({ depth: m[1].length as 2 | 3, text, id: slugger.slug(text) });
   }
   return out;
+}
+
+/** Question/answer pairs from a "## Frequently asked questions" (or "## FAQ") section: each ### is a question, the text under it the answer. */
+export function faqs(md: string): { q: string; a: string }[] {
+  const body = md.replace(/```[\s\S]*?```/g, "");
+  const start = body.search(/^##\s+(?:frequently asked questions|faqs?)\b.*$/im);
+  if (start < 0) return [];
+  const rest = body.slice(start).replace(/^##[^\n]*\n/, "");
+  const section = rest.slice(0, rest.search(/^##\s/m) >= 0 ? rest.search(/^##\s/m) : undefined);
+  return section.split(/^###\s+/m).slice(1).map((chunk) => {
+    const [q, ...a] = chunk.split("\n");
+    return { q: plainText(q).replace(/\s*#*$/, ""), a: plainText(a.join("\n")) };
+  }).filter((f) => f.q && f.a);
 }
 
 export const formatDate = (iso: string | null) =>

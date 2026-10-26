@@ -1,7 +1,7 @@
 // The social card for every post: the cover photo full-bleed under the title when there is one
 // (PNG/JPEG; the OG renderer can't decode WebP/AVIF), a plain branded card otherwise.
 import { ImageResponse } from "next/og";
-import { BLOG, topicName } from "@/lib/blog";
+import { authorOf, BLOG, topicName } from "@/lib/blog";
 import { getPost } from "@/lib/blog-server";
 
 export const alt = BLOG.name;
@@ -37,7 +37,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {post && <div style={{ fontSize: 28, fontWeight: 700, color: cover ? "#ffb4a6" : "#d9472e" }}>{topicName(post.topic)}</div>}
             <div style={{ fontSize: title.length > 60 ? 60 : 76, fontWeight: 800, lineHeight: 1.05, letterSpacing: -2 }}>{title}</div>
-            <div style={{ fontSize: 26, color: cover ? "rgba(253,255,252,.8)" : "#6f736f" }}>{post?.author_name || BLOG.defaultAuthor.name}</div>
+            <div style={{ fontSize: 26, color: cover ? "rgba(253,255,252,.8)" : "#6f736f" }}>{post ? authorOf(post).name : BLOG.name}</div>
           </div>
         </div>
       </div>

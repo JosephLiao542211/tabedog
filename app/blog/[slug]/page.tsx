@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BLOG, headings, metaDescription, metaTitle, postUrl, topicName, topicUrl, wordCount } from "@/lib/blog";
+import { BLOG, authorOf, faqs, headings, metaDescription, metaTitle, postUrl, topicName, topicUrl, wordCount } from "@/lib/blog";
 import { allPublished, getPost, relatedPosts } from "@/lib/blog-server";
 import { SITE } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema } from "@/components/site";
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = metaTitle(post);
   const description = metaDescription(post);
   const url = postUrl(post.slug);
-  const author = post.author_name || BLOG.defaultAuthor.name;
+  const author = authorOf(post).name;
   return {
     title: { absolute: title.length <= 48 ? `${title} | ${SITE.name}` : title },
     description,
@@ -47,7 +47,8 @@ export default async function PostPage({ params }: Props) {
   if (!post) notFound();
   const related = await relatedPosts(post);
   const url = `${SITE.url}${postUrl(post.slug)}`;
-  const author = post.author_name || BLOG.defaultAuthor.name;
+  const { name: author, role } = authorOf(post);
+  const faq = faqs(post.content);
   const crumbs = [{ name: "Blog", url: "/blog" }, { name: topicName(post.topic), url: topicUrl(post.topic) }, { name: post.title, url: postUrl(post.slug) }];
 
   return (
@@ -69,10 +70,16 @@ export default async function PostPage({ params }: Props) {
         wordCount: wordCount(post.content),
         timeRequired: `PT${Math.max(1, Math.round(wordCount(post.content) / 230))}M`,
         hasPart: headings(post.content).filter((h) => h.depth === 2).map((h) => ({ "@type": "WebPageElement", name: h.text, url: `${url}#${h.id}` })),
-        author: { "@type": "Person", name: author, ...(post.author_role && { jobTitle: post.author_role }), ...(post.author_avatar && { image: post.author_avatar }) },
+        author: { "@type": "Person", name: author, ...(role && { jobTitle: role }), ...(post.author_avatar && { image: post.author_avatar }), worksFor: { "@id": `${SITE.url}/#org` } },
         publisher: { "@type": "Organization", "@id": `${SITE.url}/#org`, name: SITE.name, url: SITE.url, logo: { "@type": "ImageObject", url: `${SITE.url}/logo.svg` } },
         isPartOf: { "@type": "Blog", "@id": `${SITE.url}/blog#blog`, name: BLOG.name },
-      }]} />
+        ...(related.length && { relatedLink: related.slice(0, 6).map((r) => `${SITE.url}${postUrl(r.slug)}`) }),
+      }, ...(faq.length ? [{
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+      }] : [])]} />
       <PostView post={post} related={related} />
     </>
   );

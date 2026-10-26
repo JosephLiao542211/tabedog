@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { MDXEditorMethods } from "@mdxeditor/editor";
-import { BLOG, TOPICS, metaDescription, metaTitle, postUrl, readingMinutes, slugify, wordCount, type Post } from "@/lib/blog";
+import { BLOG, TOPICS, authorOf, metaDescription, metaTitle, postUrl, readingMinutes, slugify, wordCount, type Post } from "@/lib/blog";
 import { seoChecks, seoScore } from "@/lib/blog-seo";
 import { SITE } from "@/lib/seo";
 import { deletePost, savePost, type PostInput } from "@/app/admin/blog/actions";
@@ -16,7 +16,7 @@ const MdEditor = dynamic(() => import("./md-editor"), { ssr: false, loading: () 
 
 export const emptyPost = (): PostInput => ({
   id: null, slug: "", title: "", excerpt: "", content: "", topic: TOPICS[0].slug, tags: [], cover_url: null, cover_alt: "",
-  author_name: BLOG.defaultAuthor.name, author_role: BLOG.defaultAuthor.role, author_avatar: null,
+  author_name: "", author_role: "", author_avatar: null,
   seo_title: "", seo_description: "", focus_keyword: "", canonical_url: null, noindex: false, featured: false, status: "draft", published_at: null,
 });
 
@@ -200,8 +200,12 @@ export function PostEditor({ initial }: { initial: Post | null }) {
 
           <section className="cms-panel">
             <h2>Author</h2>
-            <label className="cms-field"><span className="cms-label">Name</span><input className="cms-input" value={post.author_name} onChange={(e) => set("author_name", e.target.value)} /></label>
-            <label className="cms-field"><span className="cms-label">Role</span><input className="cms-input" value={post.author_role} onChange={(e) => set("author_role", e.target.value)} /></label>
+            <label className="cms-field">
+              <span className="cms-label">Name</span>
+              <input className="cms-input" value={post.author_name} placeholder={`Pen name: ${authorOf({ ...post, slug, author_name: "" }).name}`} onChange={(e) => set("author_name", e.target.value)} />
+              <span className="cms-hint">Leave empty (or as {BLOG.defaultAuthor.name}) for a rotating pen name, picked from the URL.</span>
+            </label>
+            <label className="cms-field"><span className="cms-label">Role</span><input className="cms-input" value={post.author_role} placeholder={authorOf({ ...post, slug, author_name: "" }).role} onChange={(e) => set("author_role", e.target.value)} /></label>
             <ImageField label="Avatar" value={post.author_avatar} onChange={(v) => set("author_avatar", v)} />
           </section>
 

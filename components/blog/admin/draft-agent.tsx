@@ -32,7 +32,7 @@ const safeUrl = (u: string) => u.replace(/ /g, "%20").replace(/\(/g, "%28").repl
 function resolve(d: Draft, over: Record<string, Choice>) {
   const photo = (slot: string) => { const base = d.photos.find((p) => p.slot === slot); return base ? { ...base, ...over[slot] } : null; };
   const content = d.content.replace(/!\[([^\]]*)\]\(photo:([\w-]+)(?:\s+"[^"]*")?\)/g, (_, alt: string, slot: string) => {
-    const p = photo(slot);
+    const p = slot === d.coverSlot ? null : photo(slot); // the cover already sits above the post
     if (!p) return "";
     const caption = [p.caption, credit(p)].filter(Boolean).join(" · ").replace(/"/g, "'");
     return `![${(alt || p.alt).replace(/[[\]]/g, "")}](${safeUrl(p.url)} "${caption}")`;
@@ -63,6 +63,7 @@ function toolLabel(name: string, i: Record<string, unknown> = {}) {
     case "restaurantReviews": return `Reviews ${s(i.url).match(/(\d+)\/$/)?.[1] ?? ""}`;
     case "findPhotos": return `Photos: ${s(i.query)}`;
     case "web_search": return `Web search: ${s(i.query) || s(i.queries)}`;
+    case "listBlogPosts": return "Reading our published posts";
     case "presentDraft": return `Draft: ${s(i.title)}`;
     default: return name;
   }
@@ -76,6 +77,7 @@ function toolResult(name: string, o: Record<string, unknown> = {}) {
     case "restaurantProfile": return `${o.name} · ${o.rating ?? "no rating"} (${o.reviews} reviews)${o.closed ? " · CLOSED" : ""}`;
     case "restaurantReviews": return `${n("reviews")} reviews`;
     case "findPhotos": return `${n("photos")} photos`;
+    case "listBlogPosts": return `${n("posts")} posts`;
     case "presentDraft": return o.ok ? `ready${n("seoNotPassing") ? ` · ${n("seoNotPassing")} SEO checks to improve` : ""}` : `${n("problems")} problems to fix`;
     default: return "done";
   }
