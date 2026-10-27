@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SITE, allCityCuisinePages, mapHref, citiesForCuisine, cityBySlug, cityCuisine, cityCuisineFaqs, cityCuisineUrl, cityUrl, cuisineBySlug, cuisineUrl } from "@/lib/seo";
+import { SITE, allCityCuisinePages, mapHref, citiesForCuisine, cityBySlug, cityCuisine, cityCuisineFaqs, cityCuisineUrl, cityUrl, cuisineBySlug, cuisineTerms, cuisineUrl } from "@/lib/seo";
 import { Breadcrumbs, CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, breadcrumbSchema, faqSchema } from "@/components/site";
 import { TopRestaurants, rankingSchema } from "@/components/top-restaurants";
 import { topRated } from "@/lib/rankings";
+import { postsAbout } from "@/lib/blog-server";
+import { FromTheBlog } from "@/components/blog/blog-ui";
 
 type Props = { params: Promise<{ city: string; cuisine: string }> };
 
@@ -43,7 +45,7 @@ export default async function CityCuisinePage({ params }: Props) {
   const siblings = city.cuisines.filter((x) => x.cuisine !== cuisine.slug);
   const elsewhere = citiesForCuisine(cuisine.slug).filter((c) => c.slug !== city.slug);
   const lower = cuisine.name.toLowerCase();
-  const ranking = await topRated(city.tabelogArea, cuisine.code);
+  const [ranking, posts] = await Promise.all([topRated(city.tabelogArea, cuisine.code), postsAbout({ place: city.name, topics: cuisineTerms(cuisine) })]);
   const map = mapHref({ city, q: cuisine.code });
 
   return (
@@ -76,6 +78,8 @@ export default async function CityCuisinePage({ params }: Props) {
           title={`Top-rated ${lower} in ${city.name} on Tabelog`}
           intro={`The ${ranking.items.length} highest-scoring ${lower} restaurants in ${city.name} right now, by Tabelog score. Open the map to see where each one is, its hours and whether it takes cards.`}
         />
+
+        <FromTheBlog title={`More on eating in ${city.name}`} posts={posts} />
 
         <section className="site-section">
           <h2 className="site-h2">Where to find the best {lower} in {city.name}</h2>

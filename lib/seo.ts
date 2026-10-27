@@ -661,6 +661,8 @@ export const CUISINE_SLUGS = CUISINES.map((c) => c.slug);
 export const cityUrl = (city: string) => `/${city}`;
 export const cityCuisineUrl = (city: string, cuisine: string) => `/${city}/${cuisine}`;
 export const cuisineUrl = (cuisine: string) => `/cuisine/${cuisine}`;
+/** Words a blog post about this cuisine would be tagged or titled with: "Wagyu & teppanyaki" → steak, wagyu, teppanyaki. */
+export const cuisineTerms = (c: Cuisine) => [...new Set([c.slug, c.code, ...c.name.toLowerCase().split(/\s*&\s*/)])];
 
 /** "Open the map" link that works without an account: enters guest mode, then opens the app on this city/cuisine, best-rated first. */
 export function mapHref(opts: { city?: City; q?: string } = {}) {

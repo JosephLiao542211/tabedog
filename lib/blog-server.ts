@@ -55,6 +55,33 @@ export async function relatedPosts(post: Pick<Post, "id" | "topic" | "tags" | "t
     .map(({ p: { tags: _t, ...card } }) => card);
 }
 
+const hasWord = (text: string, term: string) =>
+  new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(text);
+
+/**
+ * Posts about a place, for the city and cuisine pages to link to. A post matches `place` when a tag, its title or
+ * its slug names it; posts that also name one of `topics` come first, the rest of the place's posts fill in up to `n`.
+ * An exact tag counts more than a word in the title; newer wins ties. Never throws: a broken blog must not break those pages.
+ */
+export async function postsAbout({ place, topics = [] }: { place?: string; topics?: string[] }, n = 3): Promise<PostCard[]> {
+  const res = await db().from("posts").select(`${CARD_COLUMNS}, tags`).order("published_at", { ascending: false }).limit(200);
+  if (res.error) { console.error("[blog] postsAbout:", res.error.message); return []; }
+  const score = (p: PostCard & { tags: string[] }, term: string) => {
+    const t = term.toLowerCase();
+    const tags = (p.tags ?? []).map((x) => x.toLowerCase());
+    if (tags.includes(t)) return 3;
+    if (tags.some((x) => hasWord(x, t))) return 2;
+    return hasWord(`${p.title} ${p.slug.replace(/-/g, " ")}`.toLowerCase(), t) ? 1 : 0;
+  };
+  const best = (p: PostCard & { tags: string[] }, terms: string[]) => Math.max(0, ...terms.map((t) => score(p, t)));
+  return (res.data as unknown as (PostCard & { tags: string[] })[])
+    .map((p, i) => ({ p, i, where: place ? score(p, place) : 1, what: topics.length ? best(p, topics) : 0 }))
+    .filter((x) => x.where > 0 && (place || x.what > 0))
+    .sort((a, b) => Number(b.what > 0) - Number(a.what > 0) || b.where + b.what - (a.where + a.what) || a.i - b.i)
+    .slice(0, n)
+    .map(({ p: { tags: _t, ...card } }) => card);
+}
+
 /** Everything the sitemap and feed need. Never throws: a broken blog must not break the sitemap. */
 export async function allPublished(): Promise<Pick<Post, "slug" | "title" | "excerpt" | "seo_description" | "content" | "topic" | "cover_url" | "author_name" | "published_at" | "updated_at" | "noindex">[]> {
   const res = await db().from("posts").select("slug, title, excerpt, seo_description, content, topic, cover_url, author_name, published_at, updated_at, noindex").order("published_at", { ascending: false });

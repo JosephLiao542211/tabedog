@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CUISINES, CUISINE_SLUGS, SITE, citiesForCuisine, cityCuisine, cityCuisineUrl, cuisineBySlug, cuisineFaqs, cuisineUrl, mapHref } from "@/lib/seo";
+import { CUISINES, CUISINE_SLUGS, SITE, citiesForCuisine, cityCuisine, cityCuisineUrl, cuisineBySlug, cuisineFaqs, cuisineTerms, cuisineUrl, mapHref } from "@/lib/seo";
+import { postsAbout } from "@/lib/blog-server";
+import { FromTheBlog } from "@/components/blog/blog-ui";
 import { Breadcrumbs, CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, breadcrumbSchema, faqSchema } from "@/components/site";
 
 type Props = { params: Promise<{ cuisine: string }> };
 
 export const dynamicParams = false;
+export const revalidate = 86400; // picks up scheduled blog posts that went live without a save
 export function generateStaticParams() {
   return CUISINE_SLUGS.map((cuisine) => ({ cuisine }));
 }
@@ -29,6 +32,7 @@ export default async function CuisinePage({ params }: Props) {
   const url = cuisineUrl(cuisine.slug);
   const crumbs = [{ name: "Cuisines", url: "/#cuisines" }, { name: cuisine.name, url }];
   const lower = cuisine.name.toLowerCase();
+  const posts = await postsAbout({ topics: cuisineTerms(cuisine) });
 
   return (
     <div className="site">
@@ -71,6 +75,8 @@ export default async function CuisinePage({ params }: Props) {
             })}
           </div>
         </section>
+
+        <FromTheBlog title={`${cuisine.name} guides from the blog`} posts={posts} />
 
         <section className="site-section site-two">
           <div>

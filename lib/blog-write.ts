@@ -15,6 +15,10 @@ export function refreshBlog(...slugs: (string | null | undefined)[]) {
   for (const s of slugs) if (s) revalidatePath(`/blog/${s}`);
   revalidatePath("/sitemap.xml");
   revalidatePath("/blog/rss.xml");
+  // city, city × cuisine and cuisine pages link to the posts about them
+  revalidatePath("/[city]", "page");
+  revalidatePath("/[city]/[cuisine]", "page");
+  revalidatePath("/cuisine/[cuisine]", "page");
 }
 
 const RECENT = 2; // a new pick avoids what this many of the latest posts used

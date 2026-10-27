@@ -367,7 +367,8 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
 @media (max-width: 800px) {
   :root { --gap: 10px; --sheet: 44vh; --sheet-detail: 72vh; --sat: env(safe-area-inset-top, 0px); }
   /* the results sheet: the toolbar is the handle, the list is the body; the hook sets --sheet on <html> */
-  aside { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: var(--sheet); max-height: 100%; border-radius: 18px 18px 0 0; transition: height .28s cubic-bezier(.2,.8,.2,1), transform .28s cubic-bezier(.2,.8,.2,1); will-change: height; }
+  /* the sheets sit a few px in from the screen edges, in line with the search bar, rather than wall to wall */
+  aside { left: var(--gap); right: var(--gap); top: auto; bottom: 0; width: auto; height: var(--sheet); max-height: 100%; border-radius: 18px 18px 0 0; transition: height .28s cubic-bezier(.2,.8,.2,1), transform .28s cubic-bezier(.2,.8,.2,1); will-change: height; }
   /* while a place is open its sheet takes the bottom of the screen; the results slide out of the way and come back on close */
   .app.has-detail aside { transform: translateY(calc(100% + 24px)); }
   #toolbar { padding-top: 6px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
@@ -376,7 +377,7 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
   #list { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .app.sheet-peek #list { overflow: hidden; }
   /* the detail sheet: the photo is the handle, the facts scroll; pulled all the way down it closes */
-  #detail { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: var(--sheet-detail); max-height: 100%; border-radius: 18px 18px 0 0; transition: height .28s cubic-bezier(.2,.8,.2,1); will-change: height; }
+  #detail { left: var(--gap); right: var(--gap); top: auto; bottom: 0; width: auto; height: var(--sheet-detail); max-height: 100%; border-radius: 18px 18px 0 0; transition: height .28s cubic-bezier(.2,.8,.2,1); will-change: height; }
   #gallery { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
   #gallery img { -webkit-user-drag: none; pointer-events: none; }
   #gallery .grip { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 80px; z-index: 2; }

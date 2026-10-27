@@ -5,6 +5,8 @@ import { CITIES, CITY_SLUGS, SITE, cityBySlug, cityCuisine, cityCuisineUrl, city
 import { Breadcrumbs, CtaBand, FaqSection, JsonLd, SiteFooter, SiteHeader, breadcrumbSchema, faqSchema } from "@/components/site";
 import { TopRestaurants, rankingSchema } from "@/components/top-restaurants";
 import { topRated } from "@/lib/rankings";
+import { postsAbout } from "@/lib/blog-server";
+import { FromTheBlog } from "@/components/blog/blog-ui";
 
 type Props = { params: Promise<{ city: string }> };
 
@@ -35,7 +37,7 @@ export default async function CityPage({ params }: Props) {
   const others = CITIES.filter((c) => c.slug !== city.slug);
   const crumbs = [{ name: city.name, url: cityUrl(city.slug) }];
   const [intro1, intro2] = city.intro.split("\n\n");
-  const ranking = await topRated(city.tabelogArea, "", 20);
+  const [ranking, posts] = await Promise.all([topRated(city.tabelogArea, "", 20), postsAbout({ place: city.name }, 6)]);
   const map = mapHref({ city });
 
   return (
@@ -67,6 +69,8 @@ export default async function CityPage({ params }: Props) {
           title={`The ${ranking.items.length} top-rated restaurants in ${city.name} on Tabelog`}
           intro={`${city.name}'s highest-scoring restaurants across every cuisine right now. Most need a reservation; the cuisine pages below go deeper, including places you can walk into.`}
         />
+
+        <FromTheBlog title={`${city.name} food guides from the blog`} posts={posts} />
 
         <section className="site-section">
           <h2 className="site-h2">Where to eat in {city.name}, by neighborhood</h2>

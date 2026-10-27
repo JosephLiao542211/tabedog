@@ -78,6 +78,18 @@ export function PostGrid({ posts, featureFirst = false }: { posts: PostCard[]; f
   );
 }
 
+/** The blog posts about a city or cuisine, as a section on its landing page. Renders nothing when there are none. */
+export function FromTheBlog({ title, posts }: { title: string; posts: PostCard[] }) {
+  if (!posts.length) return null;
+  return (
+    <section className="site-section">
+      <h2 className="site-h2">{title}</h2>
+      <div className="blog-grid">{posts.map((p) => <PostCardView key={p.id} post={p} />)}</div>
+      <p className="site-more p2"><Link href="/blog">More from the {BLOG.name.replace(/^The /, "")}</Link></p>
+    </section>
+  );
+}
+
 export function Pager({ page, pages, base }: { page: number; pages: number; base: string }) {
   if (pages <= 1) return null;
   const href = (n: number) => (n === 1 ? base : `${base}/page/${n}`);

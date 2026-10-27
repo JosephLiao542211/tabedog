@@ -13,7 +13,7 @@ import { fmtDist, priceYenOf } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { addToList, colorHex, createList, deleteList, loadLists, removeFromList, updateList, type SavedList } from "@/lib/lists";
 import { BILLING_NOTES, can, type Plan } from "@/lib/plan";
-import type { Genre, LocateResponse, Restaurant, SearchResponse, SortKey } from "@/lib/types";
+import type { Genre, LocateResponse, Pay, Restaurant, SearchResponse, SortKey } from "@/lib/types";
 import { RestaurantCard } from "./restaurant-card";
 import { ListsPanel, type ListDraft } from "./lists";
 import { GuestLimitPrompt, ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, UpgradePrompt } from "./upgrade";
@@ -27,7 +27,7 @@ maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
 
 type Loc = { lat: number; lng: number; acc?: number | null; src?: string; at?: number };
 type Center = { lat: number; lng: number };
-type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean };
+type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean; preview?: boolean };
 type Panel = "filter" | "sort" | "account" | null;
 
 const COOKIE = "tabelog_loc";
@@ -75,6 +75,61 @@ function writeHash(f: Filters, center: Center | null) {
   history.replaceState(null, "", p.size ? "#" + p : location.pathname);
 }
 
+// ---------- search requests: kept in memory so going back to a filter, sort or area is instant ----------
+const CACHE_TTL = 10 * 60e3, CACHE_MAX = 80;
+type Fetched = { data: SearchResponse; left: string | null };
+class SearchError extends Error { constructor(public status: number, public body: { error?: string; resetAt?: number }) { super(body.error || `HTTP ${status}`); } }
+const searchCache = new Map<string, { at: number; done: boolean; p: Promise<Fetched> }>();
+
+function searchQuery(f: Filters, origin: Center, page: number) {
+  // ~10 m precision: GPS jitter shouldn't turn the same search into a cache miss
+  const p = new URLSearchParams({ lat: origin.lat.toFixed(4), lon: origin.lng.toFixed(4), range: f.range, sort: f.sort, page: String(page) });
+  if (f.q) p.set("q", f.q);
+  if (f.pay.length) p.set("pay", f.pay.join(","));
+  if (f.price) { const [a, b] = f.price.split("-"); p.set("pmin", a); p.set("pmax", b); p.set("meal", f.meal); }
+  if (f.minRating) p.set("minRating", f.minRating);
+  if (f.open) p.set("open", "1");
+  return p.toString();
+}
+const isCached = (qs: string) => { const e = searchCache.get(qs); return !!e && e.done && Date.now() - e.at < CACHE_TTL; };
+function fetchSearch(qs: string, low = false): Promise<Fetched> {
+  const hit = searchCache.get(qs);
+  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.p;
+  const entry = { at: Date.now(), done: false, p: null as unknown as Promise<Fetched> };
+  entry.p = fetch("/api/search?" + qs, low ? { priority: "low" } : undefined).then(async (res) => {
+    const body = await res.json().catch(() => ({ error: "Bad response" }));
+    if (!res.ok || body.error) throw new SearchError(res.status, body);
+    entry.done = true;
+    return { data: body as SearchResponse, left: res.headers.get(GUEST_LEFT_HEADER) };
+  });
+  entry.p.catch(() => { if (searchCache.get(qs) === entry) searchCache.delete(qs); });
+  searchCache.delete(qs); searchCache.set(qs, entry);
+  if (searchCache.size > CACHE_MAX) searchCache.delete(searchCache.keys().next().value as string);
+  return entry.p;
+}
+// guests' prefetches only fill the server cache (see ?warm in app/api/search), so they don't spend guest searches
+const warmSearch = (qs: string) => fetch("/api/search?" + qs + "&warm=1", { priority: "low" }).catch(() => {});
+
+const sortKey = (sort: SortKey, meal: Filters["meal"]): ((r: Restaurant) => number) => ({
+  distance: (r: Restaurant) => r.distM ?? Infinity, rating: (r: Restaurant) => -(r.rating ?? -Infinity), reviews: (r: Restaurant) => -(r.reviews ?? 0),
+  price_asc: (r: Restaurant) => priceYenOf(r, meal) ?? Infinity, price_desc: (r: Restaurant) => -(priceYenOf(r, meal) ?? -Infinity),
+})[sort];
+// what a filter or sort change will show, worked out from the results already loaded; the server's answer replaces it
+function previewItems(items: Restaurant[], f: Filters) {
+  const key = sortKey(f.sort, f.meal), k = (r: Restaurant) => { const v = key(r); return Number.isFinite(v) ? v : 1e15; };
+  return items
+    .filter((r) => f.pay.every((p) => r.pay?.[p as keyof Pay]) && (!f.minRating || (r.rating ?? 0) >= +f.minRating) && (!f.open || r.open === true))
+    .sort((a, b) => k(a) - k(b));
+}
+// "Search this area" centres snap to a grid a quarter of the radius wide, so nearby searches share cache entries
+function snap(c: Center, radiusM: number): Center {
+  const step = radiusM / 4, dLat = step / 110540, lat = Math.round(c.lat / dLat) * dLat;
+  const dLng = step / (111320 * Math.cos((lat * Math.PI) / 180));
+  return { lat, lng: Math.round(c.lng / dLng) * dLng };
+}
+const offset = (c: Center, northM: number, eastM: number): Center =>
+  ({ lat: c.lat + northM / 110540, lng: c.lng + eastM / (111320 * Math.cos((c.lat * Math.PI) / 180)) });
+
 function circleGeo(lat: number, lng: number, radiusM: number, n = 64): GeoJSON.Feature {
   const coords: [number, number][] = [];
   for (let i = 0; i <= n; i++) {
@@ -115,6 +170,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     detailOpen: false,
     observer: null as IntersectionObserver | null,
     genres: [] as Genre[],
+    near: [] as Array<Center & { range: string }>, // neighbouring areas prefetched around the last search
   }).current;
 
   const [items, setItems] = useState<Restaurant[]>([]);
@@ -241,13 +297,13 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   }
 
   // ---------- results -> list + pins ----------
-  function render(data: SearchResponse, opts: LoadOpts) {
+  function render(newItems: Restaurant[], opts: LoadOpts) {
     const map = E.map; if (!map) return;
     if (!opts.append) { closeDetail(); for (const k in E.markers) { E.markers[k].remove(); delete E.markers[k]; } E.items = []; }
     const start = E.items.length;
-    E.items = E.items.concat(data.items);
+    E.items = E.items.concat(newItems);
     setItems(E.items);
-    data.items.forEach((r, j) => {
+    newItems.forEach((r, j) => {
       if (r.lat == null || r.lng == null) return;
       const pin = document.createElement("div");
       pin.className = "pin"; pin.innerHTML = `<span>${start + j + 1}</span>`;
@@ -279,32 +335,20 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     const my = ++E.reqId;
     E.searchedOnce = true; setSearched(true);
     writeHash(E.filters, E.center);
-    if (!opts.append) setCount("Searching Tabelog…");
-    setLoading(true);
+    const f = E.filters, qs = searchQuery(f, origin, E.page), ready = isCached(qs);
+    const pending = fetchSearch(qs);
+    if (!opts.append && !ready) {
+      // a filter or sort change shows its effect on what's loaded right away, while Tabelog fills in the rest
+      if (opts.preview && E.items.length) { render(previewItems(E.items, f), { keepView: true }); setCount("Updating…"); }
+      else setCount("Searching Tabelog…");
+    }
+    if (!ready) setLoading(true);
     try {
-      const f = E.filters;
-      const p = new URLSearchParams({ lat: String(origin.lat), lon: String(origin.lng), range: f.range, sort: f.sort, page: String(E.page) });
-      if (f.q) p.set("q", f.q);
-      if (f.pay.length) p.set("pay", f.pay.join(","));
-      if (f.price) { const [a, b] = f.price.split("-"); p.set("pmin", a); p.set("pmax", b); p.set("meal", f.meal); }
-      if (f.minRating) p.set("minRating", f.minRating);
-      if (f.open) p.set("open", "1");
-      const res = await fetch("/api/search?" + p);
-      if (res.status === 401) { window.location.assign("/login"); return; }
-      const left = res.headers.get(GUEST_LEFT_HEADER);
+      const { data, left } = await pending;
       if (left != null) setGuestLeft(Number(left));
-      if (res.status === 429 && guest) {
-        const { resetAt } = (await res.json()) as { resetAt: number };
-        if (my !== E.reqId) return;
-        setGuestWall(resetAt);
-        setCount("Out of guest searches for this hour");
-        return;
-      }
-      const data = (await res.json()) as SearchResponse & { error?: string };
       if (my !== E.reqId) return;
-      if (data.error) throw new Error(data.error);
       E.hasMore = !!data.hasMore;
-      render(data, opts);
+      render(data.items, opts);
       E.lastSearched = { lat: data.origin.lat, lng: data.origin.lng, radiusM: data.radiusM }; E.quietMove = false;
       if (!opts.append) { // reference = where the map settles after showing these results
         const setRef = () => { if (!E.map) return; E.refCenter = visualCenter(); E.pendingRef = false; checkMoved(); };
@@ -312,13 +356,55 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       }
       setSearchArea(E.center ? E.lastSearched : null);
       setCount(describe(data));
-    } catch {
+      if (!opts.append) prefetch(f, origin);
+      else if (E.hasMore) fetchSearch(searchQuery(f, origin, E.page + 1), true).catch(() => {}); // the page after this one, before you scroll to it
+    } catch (e) {
+      const err = e as SearchError;
+      if (err.status === 401) { window.location.assign("/login"); return; }
       if (my !== E.reqId) return;
+      if (err.status === 429 && guest && err.body?.resetAt) {
+        setGuestWall(err.body.resetAt);
+        setCount("Out of guest searches for this hour");
+        return;
+      }
       setCount("Tabelog didn’t answer. Try again.");
       E.hasMore = false;
     } finally {
       if (my === E.reqId) setLoading(false);
     }
+  }
+
+  // ---------- prefetch: once results land, quietly load what the next tap is likely to ask for ----------
+  // the next page, the other main sort, "takes cards", and the four neighbouring areas one radius away
+  function prefetch(f: Filters, origin: Center) {
+    const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (conn?.saveData || /2g/.test(conn?.effectiveType ?? "")) return;
+    const my = E.reqId, R = RANGES[f.range];
+    const jobs: Array<{ qs: string; page1: boolean }> = [];
+    const add = (ff: Filters, c: Center = origin) => jobs.push({ qs: searchQuery(ff, c, 1), page1: true });
+    if (E.hasMore) jobs.push({ qs: searchQuery(f, origin, E.page + 1), page1: false });
+    add({ ...f, sort: f.sort === "rating" ? "distance" : "rating" });
+    if (!f.pay.includes("card")) add({ ...f, pay: [...f.pay, "card"] });
+    E.near = [[R, 0], [0, R], [-R, 0], [0, -R]].map(([n, e]) => ({ ...snap(offset(origin, n, e), R), range: f.range }));
+    for (const c of E.near) add(f, c);
+    let next = 0;
+    const worker = async () => {
+      // stop once a newer search takes over (it queues its own), and stay out of the way of the one in flight
+      while (next < jobs.length && E.reqId === my) {
+        if (E.loading || document.hidden) { await new Promise((r) => setTimeout(r, 400)); continue; }
+        const j = jobs[next++];
+        if (isCached(j.qs)) continue;
+        await (guest && j.page1 ? warmSearch(j.qs) : fetchSearch(j.qs, true).catch(() => {}));
+      }
+    };
+    setTimeout(() => { worker(); worker(); }, 300);
+  }
+  // hovering a quick search starts loading it before the click lands
+  function prefetchQ(q: string) {
+    const origin = E.center || readLoc(); if (!origin || !E.searchedOnce) return;
+    const qs = searchQuery({ ...E.filters, q }, origin, 1);
+    if (isCached(qs)) return;
+    if (guest) warmSearch(qs); else fetchSearch(qs, true).catch(() => {});
   }
   const restart = (opts: LoadOpts = {}) => {
     E.page = 1; load({ keepView: true, ...opts });
@@ -526,13 +612,16 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   }
 
   // ---------- filters / sort / area / locate ----------
-  const changeFilters = (patch: Partial<Filters>) => { setFilters({ ...E.filters, ...patch }); restart(); };
+  // pay / rating / open-now / sort can be previewed from what's loaded; price needs the server
+  const changeFilters = (patch: Partial<Filters>) => { setFilters({ ...E.filters, ...patch }); restart({ preview: !("price" in patch) }); };
   const resetFilters = () => changeFilters({ pay: [], price: "", meal: "dinner", minRating: "", open: false });
   const togglePanel = (which: Exclude<Panel, null>) => setPanel((p) => (p === which ? null : which));
   const searchArea = () => {
-    const c = visualCenter();
-    setCenter({ lat: c.lat, lng: c.lng });
-    setFilters({ ...E.filters, range: rangeForViewport() });
+    const v = visualCenter(), c = { lat: v.lat, lng: v.lng }, range = rangeForViewport(), R = RANGES[range];
+    // close to a neighbouring area that was prefetched? search exactly there and its results are already loaded
+    const near = E.near.filter((n) => n.range === range).sort((a, b) => haversine(a, c) - haversine(b, c))[0];
+    setCenter(near && haversine(near, c) < R * 0.4 ? { lat: near.lat, lng: near.lng } : snap(c, R));
+    setFilters({ ...E.filters, range });
     E.page = 1; load({ keepView: true });
     unfollow();
   };
@@ -550,11 +639,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const listItems = viewing ? viewing.items : items;
   // gold / silver / bronze pins for the best three loaded results under the current sort
   const medals = useMemo(() => {
-    const key: Record<SortKey, (r: Restaurant) => number> = {
-      distance: (r) => r.distM ?? Infinity, rating: (r) => -(r.rating ?? -Infinity), reviews: (r) => -(r.reviews ?? 0),
-      price_asc: (r) => priceYenOf(r, filters.meal) ?? Infinity, price_desc: (r) => -(priceYenOf(r, filters.meal) ?? -Infinity),
-    };
-    const ranked = items.filter((r) => Number.isFinite(key[filters.sort](r))).sort((a, b) => key[filters.sort](a) - key[filters.sort](b)).slice(0, 3);
+    const key = sortKey(filters.sort, filters.meal);
+    const ranked = items.filter((r) => Number.isFinite(key(r))).sort((a, b) => key(a) - key(b)).slice(0, 3);
     return new Map(ranked.map((r, i) => [r.id, (i + 1) as MedalRank]));
   }, [items, filters.sort, filters.meal]);
   useEffect(() => {
@@ -695,7 +781,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
         <div id="quick">
           {QUICK.map((label) => {
             const on = filters.q.toLowerCase() === label.toLowerCase();
-            return <button key={label} type="button" className={"float" + (on ? " on" : "")} aria-pressed={on} onClick={() => submit(on ? "" : label)}>{label}</button>;
+            return <button key={label} type="button" className={"float" + (on ? " on" : "")} aria-pressed={on} onPointerEnter={() => !on && prefetchQ(label)} onClick={() => submit(on ? "" : label)}>{label}</button>;
           })}
         </div>
         <div id="areaBar" className={"float" + (showArea && !viewing ? " show" : "") + (loading ? " loading" : "")}>
