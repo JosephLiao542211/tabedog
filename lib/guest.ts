@@ -9,3 +9,5 @@ export const GUEST_WINDOW_SEC = 60 * 60;
 // background prefetches (?warm=1) don't spend searches but have their own, looser hourly cap
 export const GUEST_WARM_LIMIT = 60;
 export const GUEST_LEFT_HEADER = "x-guest-searches-left";
+// name suggestions while typing in the search box (/api/suggest), counted apart from searches
+export const GUEST_SUGGEST_LIMIT = 200;

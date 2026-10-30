@@ -7,20 +7,21 @@ import type { Map as MLMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_STYLE, tintMap, workerUrl } from "@/lib/map-style";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { RANGES } from "@/lib/genres";
+import { describeQuery, nameMatches, parseQuery, RANGES, suggestions, type Suggestion } from "@/lib/genres";
 import { haversine } from "@/lib/geo";
 import { fmtDist, priceYenOf } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { addToList, colorHex, createList, deleteList, loadLists, removeFromList, updateList, type SavedList } from "@/lib/lists";
 import { BILLING_NOTES, can, type Plan } from "@/lib/plan";
-import type { Genre, LocateResponse, Pay, Restaurant, SearchResponse, SortKey } from "@/lib/types";
+import type { LocateResponse, Pay, PlaceHit, Restaurant, SearchResponse, SortKey } from "@/lib/types";
 import { RestaurantCard } from "./restaurant-card";
 import { ListsPanel, type ListDraft } from "./lists";
 import { GuestLimitPrompt, ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, UpgradePrompt } from "./upgrade";
 import { GUEST_LEFT_HEADER, GUEST_SEARCH_LIMIT } from "@/lib/guest";
 import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
-import { ChevronRight, FilterIcon, GearIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
+import { ChevronRight, FilterIcon, ForkIcon, GearIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, PinIcon, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, SparkIcon, StarIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
+import { DishIcon } from "./dish-icons";
 import { fullHeight, sheetPx, useMobile, useSheet } from "./use-sheet";
 
 maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
@@ -29,9 +30,12 @@ type Loc = { lat: number; lng: number; acc?: number | null; src?: string; at?: n
 type Center = { lat: number; lng: number };
 type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean; preview?: boolean };
 type Panel = "filter" | "sort" | "account" | null;
+// a row in the dropdown under the search bar
+type SuggestRow = { kind: "search" | Suggestion["kind"]; label: string; sub: string; value: string } | { kind: "place"; label: string; sub: string; place: PlaceHit };
 
 const COOKIE = "tabelog_loc";
 // one-tap searches under the search bar
+// each has an icon in dish-icons.tsx
 const QUICK = ["Ramen", "Sushi", "Izakaya", "Yakiniku", "Cafe", "Yakitori", "Tempura", "Udon"];
 const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
 
@@ -81,9 +85,11 @@ type Fetched = { data: SearchResponse; left: string | null };
 class SearchError extends Error { constructor(public status: number, public body: { error?: string; resetAt?: number }) { super(body.error || `HTTP ${status}`); } }
 const searchCache = new Map<string, { at: number; done: boolean; p: Promise<Fetched> }>();
 
-function searchQuery(f: Filters, origin: Center, page: number) {
+type Box = NonNullable<SearchResponse["view"]>;
+function searchQuery(f: Filters, origin: Center, page: number, view: Box | null = null) {
   // ~10 m precision: GPS jitter shouldn't turn the same search into a cache miss
   const p = new URLSearchParams({ lat: origin.lat.toFixed(4), lon: origin.lng.toFixed(4), range: f.range, sort: f.sort, page: String(page) });
+  if (view) p.set("bbox", [view.s, view.w, view.n, view.e].map((v) => v.toFixed(4)).join(","));
   if (f.q) p.set("q", f.q);
   if (f.pay.length) p.set("pay", f.pay.join(","));
   if (f.price) { const [a, b] = f.price.split("-"); p.set("pmin", a); p.set("pmax", b); p.set("meal", f.meal); }
@@ -130,6 +136,17 @@ function snap(c: Center, radiusM: number): Center {
 const offset = (c: Center, northM: number, eastM: number): Center =>
   ({ lat: c.lat + northM / 110540, lng: c.lng + eastM / (111320 * Math.cos((c.lat * Math.PI) / 180)) });
 
+/** Grey stand-ins shaped like restaurant cards, shown while a search is on its way. */
+function CardSkeletons({ n }: { n: number }) {
+  return (
+    <div aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} className="card card-skeleton"><i /><div><i /><i /><i /></div></div>
+      ))}
+    </div>
+  );
+}
+
 function circleGeo(lat: number, lng: number, radiusM: number, n = 64): GeoJSON.Feature {
   const coords: [number, number][] = [];
   for (let i = 0; i <= n; i++) {
@@ -137,6 +154,9 @@ function circleGeo(lat: number, lng: number, radiusM: number, n = 64): GeoJSON.F
     coords.push([lng + (radiusM * Math.cos(a)) / (111320 * Math.cos((lat * Math.PI) / 180)), lat + (radiusM * Math.sin(a)) / 110540]);
   }
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coords] } };
+}
+function boxGeo(b: Box): GeoJSON.Feature {
+  return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[[b.w, b.s], [b.e, b.s], [b.e, b.n], [b.w, b.n], [b.w, b.s]]] } };
 }
 
 export default function TabeDogApp({ email, userId, plan, billing, guest = false }: { email: string; userId: string; plan: Plan; billing: boolean; guest?: boolean }) {
@@ -157,6 +177,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     following: false,               // ...and whether the camera rides along with it (the locate button turns this on)
     filters: DEFAULT_FILTERS as Filters,
     center: null as Center | null,
+    view: null as Box | null,       // zoomed in past the smallest circle: "Search this area" searches exactly this box
     page: 1,
     items: [] as Restaurant[],
     lastSearched: null as (Center & { radiusM: number }) | null,
@@ -169,7 +190,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     hasMore: false,
     detailOpen: false,
     observer: null as IntersectionObserver | null,
-    genres: [] as Genre[],
+    focus: null as Restaurant | null, // a restaurant picked from the suggestions, opened once the search around it lands
     near: [] as Array<Center & { range: string }>, // neighbouring areas prefetched around the last search
   }).current;
 
@@ -178,12 +199,18 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const [searched, setSearched] = useState(false);
   const [count, setCount] = useState("Finding you…");
   const [loading, setLoadingState] = useState(false);
+  // placeholder cards while Tabelog answers: "new" replaces the list, "more" trails it during "load more"
+  // on a phone the quick searches only show while the search box has focus
+  const [qFocus, setQFocus] = useState(false);
+  const [skeleton, setSkeleton] = useState<"new" | "more" | null>(null);
   const [showArea, setShowArea] = useState(false);
   const [tracking, setTracking] = useState<"off" | "on" | "follow">("off");
   const [detail, setDetail] = useState<Restaurant | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [q, setQ] = useState("");
-  const [suggest, setSuggest] = useState<Genre[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [places, setPlaces] = useState<PlaceHit[]>([]);              // restaurants named like what's typed
+  const placeReq = useRef<{ t?: ReturnType<typeof setTimeout>; ac?: AbortController }>({});
   const [selIdx, setSelIdx] = useState(-1);
   const [lists, setLists] = useState<SavedList[]>([]);
   const [listsNote, setListsNote] = useState<string | null>(null);
@@ -197,7 +224,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const closeGuestWall = useCallback(() => setGuestWall(null), []);
 
   const setFilters = (f: Filters) => { E.filters = f; setFiltersState(f); };
-  const setCenter = (c: Center | null) => { E.center = c; };
+  const setCenter = (c: Center | null, view: Box | null = null) => { E.center = c; E.view = view; };
 
   // ---------- phones: the results and the detail are bottom sheets you drag up and down ----------
   const mobile = useMobile();
@@ -238,15 +265,26 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   }
   const writeLoc = (loc: Loc) => { writeLocCookie(loc); renderMe(); };
 
-  function setSearchArea(c: (Center & { radiusM: number }) | null) {
+  function setSearchArea(c: (Center & { radiusM: number }) | null, box: Box | null = null) {
     const s = E.map?.getSource("search-area") as maplibregl.GeoJSONSource | undefined;
-    if (s) s.setData({ type: "FeatureCollection", features: c ? [circleGeo(c.lat, c.lng, c.radiusM)] : [] });
+    if (s) s.setData({ type: "FeatureCollection", features: box ? [boxGeo(box)] : c ? [circleGeo(c.lat, c.lng, c.radiusM)] : [] });
   }
-  function rangeForViewport() {
+  // half the map's shorter side, in metres
+  function halfViewport() {
     const map = E.map!, b = map.getBounds(), c = map.getCenter();
     const w = haversine({ lat: c.lat, lng: b.getWest() }, { lat: c.lat, lng: b.getEast() });
     const h = haversine({ lat: b.getSouth(), lng: c.lng }, { lat: b.getNorth(), lng: c.lng });
-    const half = Math.min(w, h) / 2;
+    return Math.min(w, h) / 2;
+  }
+  // the part of the map the floating panels don't cover, rounded so the same view searches the same box
+  function visibleBox(): Box {
+    const map = E.map!, el = map.getContainer(), pad = fitPadding();
+    const sw = map.unproject([pad.left, el.clientHeight - pad.bottom]), ne = map.unproject([el.clientWidth - pad.right, pad.top]);
+    const r = (v: number) => Math.round(v * 1e4) / 1e4;
+    return { s: r(sw.lat), w: r(sw.lng), n: r(ne.lat), e: r(ne.lng) };
+  }
+  function rangeForViewport() {
+    const half = halfViewport();
     let best = "F";
     for (const [k, m] of Object.entries(RANGES)) if (m <= half) best = k;
     return best;
@@ -259,7 +297,9 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     if (E.quietMove) moved = false;
     else if (E.lastSearched) {
       // sensitive: a quarter of the searched radius (min 60 m) from where the results were shown, or zoomed out past what was searched
-      moved = haversine(E.refCenter || E.lastSearched, c) > Math.max(E.lastSearched.radiusM * 0.25, 60) || RANGES[rangeForViewport()] > E.lastSearched.radiusM * 1.5;
+      // or zoomed in far enough that most of what was searched is off screen (a closer look finds that spot's best)
+      const half = halfViewport(), R = E.lastSearched.radiusM;
+      moved = haversine(E.refCenter || E.lastSearched, c) > Math.max(R * 0.25, 60) || (E.view ? half : Math.max(half, RANGES.F)) > R * 1.5 || half < R * 0.5;
     } else if (home) moved = haversine(home, c) > 150;
     setShowArea(moved && E.map.getZoom() >= 10);
   }
@@ -325,9 +365,12 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   function describe(data: SearchResponse) {
     const n = E.items.length + (E.hasMore ? "+" : "");
     const where = E.center ? "around here" : "around you";
-    if (!data.genre.matched && E.filters.q) return `No “${E.filters.q}” category · showing all restaurants ${where}`;
-    if (data.widened) return `Nothing within ${fmtDist(data.radiusM)} · showing the nearest ${data.genre.label.toLowerCase()}`;
-    return `${n} ${data.genre.code === "RC" ? "places" : data.genre.label.toLowerCase()} within ${fmtDist(data.radiusM)} ${where}`;
+    const what = (data.genre.code === "RC" ? "places" : data.genre.label.toLowerCase()) + (data.keyword ? ` matching “${data.keyword}”` : "") +
+      (data.features.length ? " · " + data.features.join(", ").toLowerCase() : "");
+    const dropped = data.keywordDropped ? `No “${data.keywordDropped}” here · ` : "";
+    if (data.view) return `${dropped}${E.hasMore && data.total ? `Top ${E.items.length} of ${data.total}` : E.items.length} ${what} in this area`;
+    if (data.widened) return `${dropped}Nothing within ${fmtDist(data.radiusM)} · showing the nearest ${what}`;
+    return `${dropped}${n} ${what} within ${fmtDist(data.radiusM)} ${where}`;
   }
   async function load(opts: LoadOpts = {}) {
     const origin = E.center || readLoc();
@@ -335,14 +378,15 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     const my = ++E.reqId;
     E.searchedOnce = true; setSearched(true);
     writeHash(E.filters, E.center);
-    const f = E.filters, qs = searchQuery(f, origin, E.page), ready = isCached(qs);
+    const f = E.filters, view = E.view, qs = searchQuery(f, origin, E.page, view), ready = isCached(qs);
     const pending = fetchSearch(qs);
+    let previewed = false;
     if (!opts.append && !ready) {
       // a filter or sort change shows its effect on what's loaded right away, while Tabelog fills in the rest
-      if (opts.preview && E.items.length) { render(previewItems(E.items, f), { keepView: true }); setCount("Updating…"); }
+      if (opts.preview && E.items.length) { const p = previewItems(E.items, f); render(p, { keepView: true }); previewed = p.length > 0; setCount("Updating…"); }
       else setCount("Searching Tabelog…");
     }
-    if (!ready) setLoading(true);
+    if (!ready) { setLoading(true); setSkeleton(opts.append ? "more" : previewed ? null : "new"); }
     try {
       const { data, left } = await pending;
       if (left != null) setGuestLeft(Number(left));
@@ -354,12 +398,18 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
         const setRef = () => { if (!E.map) return; E.refCenter = visualCenter(); E.pendingRef = false; checkMoved(); };
         if (E.map?.isMoving()) { E.pendingRef = true; E.map.once("moveend", setRef); } else setRef();
       }
-      setSearchArea(E.center ? E.lastSearched : null);
+      setSearchArea(E.center ? E.lastSearched : null, data.view);
       setCount(describe(data));
-      if (!opts.append) prefetch(f, origin);
-      else if (E.hasMore) fetchSearch(searchQuery(f, origin, E.page + 1), true).catch(() => {}); // the page after this one, before you scroll to it
+      if (E.focus && !opts.append) {
+        // a restaurant picked by name: open it, with its pin when the search around it brought it up
+        const r = E.focus; E.focus = null;
+        if (E.items.some((x) => x.id === r.id)) highlight(r.id, true); else openSaved(r);
+      }
+      if (!opts.append) prefetch(f, origin, view);
+      else if (E.hasMore) fetchSearch(searchQuery(f, origin, E.page + 1, view), true).catch(() => {}); // the page after this one, before you scroll to it
     } catch (e) {
       const err = e as SearchError;
+      E.focus = null;
       if (err.status === 401) { window.location.assign("/login"); return; }
       if (my !== E.reqId) return;
       if (err.status === 429 && guest && err.body?.resetAt) {
@@ -370,22 +420,23 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       setCount("Tabelog didn’t answer. Try again.");
       E.hasMore = false;
     } finally {
-      if (my === E.reqId) setLoading(false);
+      if (my === E.reqId) { setLoading(false); setSkeleton(null); }
     }
   }
 
   // ---------- prefetch: once results land, quietly load what the next tap is likely to ask for ----------
   // the next page, the other main sort, "takes cards", and the four neighbouring areas one radius away
-  function prefetch(f: Filters, origin: Center) {
+  function prefetch(f: Filters, origin: Center, view: Box | null) {
     const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
     if (conn?.saveData || /2g/.test(conn?.effectiveType ?? "")) return;
     const my = E.reqId, R = RANGES[f.range];
     const jobs: Array<{ qs: string; page1: boolean }> = [];
-    const add = (ff: Filters, c: Center = origin) => jobs.push({ qs: searchQuery(ff, c, 1), page1: true });
-    if (E.hasMore) jobs.push({ qs: searchQuery(f, origin, E.page + 1), page1: false });
+    const add = (ff: Filters, c?: Center) => jobs.push({ qs: c ? searchQuery(ff, c, 1) : searchQuery(ff, origin, 1, view), page1: true });
+    if (E.hasMore) jobs.push({ qs: searchQuery(f, origin, E.page + 1, view), page1: false });
     add({ ...f, sort: f.sort === "rating" ? "distance" : "rating" });
     if (!f.pay.includes("card")) add({ ...f, pay: [...f.pay, "card"] });
-    E.near = [[R, 0], [0, R], [-R, 0], [0, -R]].map(([n, e]) => ({ ...snap(offset(origin, n, e), R), range: f.range }));
+    // (a searched box has no neighbours: the next box depends on how far you zoom)
+    E.near = view ? [] : [[R, 0], [0, R], [-R, 0], [0, -R]].map(([n, e]) => ({ ...snap(offset(origin, n, e), R), range: f.range }));
     for (const c of E.near) add(f, c);
     let next = 0;
     const worker = async () => {
@@ -402,7 +453,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   // hovering a quick search starts loading it before the click lands
   function prefetchQ(q: string) {
     const origin = E.center || readLoc(); if (!origin || !E.searchedOnce) return;
-    const qs = searchQuery({ ...E.filters, q }, origin, 1);
+    const qs = searchQuery({ ...E.filters, q }, origin, 1, E.view);
     if (isCached(qs)) return;
     if (guest) warmSearch(qs); else fetchSearch(qs, true).catch(() => {});
   }
@@ -551,7 +602,6 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       if (es.some((e) => e.isIntersecting) && E.hasMore && !E.loading) { E.page++; load({ append: true, keepView: true }); }
     }, { root: listEl.current, rootMargin: "400px" });
 
-    fetch("/api/genres").then((r) => r.json()).then((g: Genre[]) => { E.genres = g; }).catch(() => {});
     reloadLists();
 
     // back from Stripe Checkout / the portal: say what happened, then drop the query so a reload doesn't repeat it
@@ -590,25 +640,72 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const sentinelRef = useCallback((el: HTMLDivElement | null) => { if (el) E.observer?.observe(el); }, [E]);
 
   // ---------- search bar + suggestions ----------
-  function updateSuggest(value: string) {
-    const s = value.trim().toLowerCase();
-    setSuggest(s ? E.genres.filter((g) => g.label.toLowerCase().includes(s) || g.code.includes(s)).slice(0, 6) : []);
-    setSelIdx(-1);
+  // the dropdown: search for exactly what's typed, matching cuisines and features (instant), then restaurants by name (from Tabelog)
+  const suggestRows = useMemo<SuggestRow[]>(() => {
+    const t = q.trim();
+    if (!suggestOpen || !t) return [];
+    const parsed = parseQuery(t), read = describeQuery(parsed);
+    const rows: SuggestRow[] = [{ kind: "search", label: `Search “${t}”`, value: t,
+      sub: !read ? "All restaurants" : read === `“${parsed.keyword}”` ? "Restaurant names and keywords" : read }];
+    for (const s of suggestions(t, 4)) if (s.value.toLowerCase() !== t.toLowerCase()) rows.push({ ...s, sub: s.kind === "genre" ? "Cuisine" : "Feature" });
+    // drop names left over from an earlier keystroke
+    for (const p of places) if (nameMatches(p.name, t) || (parsed.keyword && nameMatches(p.name, parsed.keyword))) {
+      const where = p.station || (p.tabelogDistanceM != null ? fmtDist(p.tabelogDistanceM) + " away" : "");
+      rows.push({ kind: "place", label: p.name, sub: [p.genre, where].filter(Boolean).join(" · "), place: p });
+    }
+    return rows;
+  }, [q, suggestOpen, places]);
+
+  function fetchPlaces(text: string) {
+    const r = placeReq.current;
+    clearTimeout(r.t); r.ac?.abort();
+    if (text.trim().length < 2) { setPlaces([]); return; }
+    r.t = setTimeout(() => {
+      const ac = (r.ac = new AbortController()), o = E.center || readLoc();
+      // ~100 m precision so people typing nearby share Tabelog lookups
+      const p = new URLSearchParams({ q: text.trim() });
+      if (o) { p.set("lat", o.lat.toFixed(3)); p.set("lon", o.lng.toFixed(3)); }
+      fetch("/api/suggest?" + p, { signal: ac.signal }).then((res) => res.json())
+        .then((b: { places?: PlaceHit[] }) => setPlaces(b.places ?? [])).catch(() => {});
+    }, 250);
   }
+  function updateSuggest(value: string) {
+    setSuggestOpen(true); setSelIdx(-1);
+    fetchPlaces(value);
+  }
+  function closeSuggest() { setSuggestOpen(false); setSelIdx(-1); clearTimeout(placeReq.current.t); placeReq.current.ac?.abort(); }
   function submit(value = q) {
-    setSuggest([]); qEl.current?.blur();
+    closeSuggest(); qEl.current?.blur();
     const nq = value.trim();
     setQ(nq);
     setFilters({ ...E.filters, q: nq });
     restart();
   }
+  // a restaurant picked by name: search what was typed around it, so it lands in the list with its neighbours, and open it
+  async function pickPlace(h: PlaceHit) {
+    const typed = q.trim();
+    closeSuggest(); qEl.current?.blur();
+    setCount(`Finding ${h.name}…`);
+    try {
+      const res = await fetch("/api/place?" + new URLSearchParams({ url: h.url, closed: h.closed }));
+      const info = await res.json();
+      if (!res.ok || info.error) throw new Error(info.error);
+      const me = readLoc();
+      E.focus = { ...h, ...info, distM: me ? Math.round(haversine(me, info)) : null };
+      setCenter({ lat: info.lat, lng: info.lng });
+      submit(typed);
+    } catch {
+      submit(h.name);
+    }
+  }
+  const pick = (row: SuggestRow) => (row.kind === "place" ? pickPlace(row.place) : submit(row.value));
   function onQKey(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (suggest.length) setSelIdx((selIdx + (e.key === "ArrowDown" ? 1 : -1) + suggest.length) % suggest.length);
+      if (suggestRows.length) setSelIdx((selIdx + (e.key === "ArrowDown" ? 1 : -1) + suggestRows.length) % suggestRows.length);
     }
-    if (e.key === "Escape") { setSuggest([]); qEl.current?.blur(); }
-    if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); submit(suggest[selIdx].label); }
+    if (e.key === "Escape") { closeSuggest(); qEl.current?.blur(); }
+    if (e.key === "Enter" && selIdx >= 0 && suggestRows[selIdx]) { e.preventDefault(); pick(suggestRows[selIdx]); }
   }
 
   // ---------- filters / sort / area / locate ----------
@@ -617,6 +714,15 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const resetFilters = () => changeFilters({ pay: [], price: "", meal: "dinner", minRating: "", open: false });
   const togglePanel = (which: Exclude<Panel, null>) => setPanel((p) => (p === which ? null : which));
   const searchArea = () => {
+    // zoomed in past the smallest circle Tabelog draws: search exactly what's on screen, best first
+    if (halfViewport() < RANGES.F) {
+      const b = visibleBox();
+      setCenter({ lat: (b.s + b.n) / 2, lng: (b.w + b.e) / 2 }, b);
+      setFilters({ ...E.filters, range: "F" });
+      E.page = 1; load({ keepView: true });
+      unfollow();
+      return;
+    }
     const v = visualCenter(), c = { lat: v.lat, lng: v.lng }, range = rangeForViewport(), R = RANGES[range];
     // close to a neighbouring area that was prefetched? search exactly there and its results are already loaded
     const near = E.near.filter((n) => n.range === range).sort((a, b) => haversine(a, c) - haversine(b, c))[0];
@@ -657,7 +763,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   }, [medals]);
 
   return (
-    <div className={"app" + (detail ? " has-detail" : "") + (mobile ? ` sheet-${listSheet.stop}` : "")}>
+    <div className={"app" + (detail ? " has-detail" : "") + (qFocus ? " q-focus" : "") + (mobile ? ` sheet-${listSheet.stop}` : "")}>
       <div id="map" ref={mapEl} />
 
       <aside className="float">
@@ -684,12 +790,13 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
 
         {panel === "filter" && <FilterPanel f={filters} onChange={changeFilters} onReset={resetFilters} />}
         {panel === "sort" && <SortPanel value={filters.sort} onChange={(s) => { setPanel(null); changeFilters({ sort: s }); }} />}
-        <div id="list" ref={listEl}>
+        <div id="list" ref={listEl} aria-busy={!viewing && !!skeleton}>
           {listsNote && <p className="sub" style={{ padding: "10px 16px", color: "var(--accent-ink)" }}>{listsNote}</p>}
-          {listItems.map((r, i) => (
+          {!viewing && skeleton === "new" ? <CardSkeletons n={6} /> : listItems.map((r, i) => (
             <RestaurantCard key={r.id} r={r} index={i} active={detail?.id === r.id} meal={filters.meal} tags={colorsOf(r.id)}
               onClick={() => (viewing ? openSaved(r) : highlight(r.id, true))} />
           ))}
+          {!viewing && skeleton === "more" && <CardSkeletons n={2} />}
           {!viewing && items.length > 0 && <div id="sentinel" ref={sentinelRef} />}
           {viewing && viewing.items.length === 0 && (
             <div className="empty"><h2>Nothing in {viewing.name} yet</h2><p className="p2">{viewing.isMain ? "Tap the heart on a place to keep it here." : "Open a place and use “Add to list”."}</p></div>
@@ -729,17 +836,30 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
           <div id="search" className="float">
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); submit(); }}>
               <SearchIcon />
-              <input id="q" ref={qEl} type="search" placeholder="Ramen, sushi, cafe…" enterKeyHint="search"
+              <input id="q" ref={qEl} type="search" placeholder="Ramen, a restaurant, date night…" enterKeyHint="search"
                 value={q} onChange={(e) => { setQ(e.target.value); updateSuggest(e.target.value); }} onKeyDown={onQKey}
-                onBlur={() => setTimeout(() => setSuggest([]), 120)} />
+                role="combobox" aria-expanded={suggestRows.length > 0} aria-controls="suggest" aria-autocomplete="list"
+                aria-activedescendant={selIdx >= 0 ? `sg-${selIdx}` : undefined}
+                onFocus={() => { setQFocus(true); setSuggestOpen(true); }}
+                onBlur={() => setTimeout(() => { if (document.activeElement !== qEl.current) { setSuggestOpen(false); setQFocus(false); } }, 120)} />
               {q && <button type="button" id="clearQ" aria-label="Clear" onClick={() => submit("")}><XIcon /></button>}
               <button type="button" id="accountBtn" className={panel === "account" ? "open" : ""} aria-label="Account" aria-expanded={panel === "account"} title={guest ? "Guest" : email} onClick={() => togglePanel("account")}>
                 {guest ? "G" : (email[0] || "?")}
               </button>
             </form>
-            {suggest.length > 0 && (
-              <div id="suggest" className="float">
-                {suggest.map((g, i) => <div key={g.code} className={"p1" + (i === selIdx ? " sel" : "")} onMouseDown={() => submit(g.label)}>{g.label}</div>)}
+            {suggestRows.length > 0 && (
+              <div id="suggest" className="float" role="listbox">
+                {suggestRows.map((row, i) => (
+                  <div key={row.kind === "place" ? row.place.id : row.kind + row.label} id={`sg-${i}`} role="option" aria-selected={i === selIdx}
+                    className={"sg" + (i === selIdx ? " sel" : "") + (row.kind === "place" && suggestRows[i - 1]?.kind !== "place" ? " first-place" : "")}
+                    onMouseDown={(e) => { e.preventDefault(); pick(row); }}>
+                    <span className="sg-ic">
+                      {row.kind === "search" ? <SearchIcon /> : row.kind === "feature" ? <SparkIcon size={16} /> : row.kind === "place" ? <PinIcon /> : QUICK.includes(row.label) ? <DishIcon dish={row.label} /> : <ForkIcon />}
+                    </span>
+                    <span className="sg-txt"><span className="p1">{row.label}</span>{row.sub && <span className="sub">{row.sub}</span>}</span>
+                    {row.kind === "place" && row.place.rating != null && <span className="sg-rate"><StarIcon size={12} />{row.place.rating.toFixed(2)}</span>}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -779,10 +899,13 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
         )}
         </div>
         <div id="quick">
-          {QUICK.map((label) => {
-            const on = filters.q.toLowerCase() === label.toLowerCase();
-            return <button key={label} type="button" className={"float" + (on ? " on" : "")} aria-pressed={on} onPointerEnter={() => !on && prefetchQ(label)} onClick={() => submit(on ? "" : label)}>{label}</button>;
-          })}
+          {QUICK.map((label) => (
+            // mousedown keeps focus in the search box, so on a phone the row doesn't vanish under the tap
+            <button key={label} type="button" className="float"
+              onMouseDown={(e) => e.preventDefault()} onPointerEnter={() => prefetchQ(label)} onClick={() => submit(label)}>
+              <DishIcon dish={label} />{label}
+            </button>
+          ))}
         </div>
         <div id="areaBar" className={"float" + (showArea && !viewing ? " show" : "") + (loading ? " loading" : "")}>
           <button type="button" disabled={loading} onClick={searchArea}><RefreshIcon /><span>{loading ? "Searching…" : "Search this area"}</span></button>

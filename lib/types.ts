@@ -27,6 +27,9 @@ export type Restaurant = {
   open: boolean | null;
 };
 
+/** A restaurant from a name search: the listing half, without coordinates or hours (see /api/place). */
+export type PlaceHit = Pick<Restaurant, "id" | "url" | "name" | "rating" | "reviews" | "station" | "tabelogDistanceM" | "genre" | "genreFull" | "dinner" | "lunch" | "closed" | "image">;
+
 export type Genre = { code: string; label: string; matched: boolean };
 
 export type SortKey = "distance" | "rating" | "reviews" | "price_asc" | "price_desc";
@@ -38,7 +41,12 @@ export type SearchResponse = {
   hasMore: boolean;
   origin: { lat: number; lng: number };
   radiusM: number;
+  view: { s: number; w: number; n: number; e: number } | null; // set when the search was the map view's box, not a circle
+  total: number | null;      // how many places Tabelog has in that box
   genre: Genre;
+  features: string[];        // Tabelog search conditions read from the search text ("Private room")
+  keyword: string;           // what went to Tabelog's keyword search: a restaurant name, usually
+  keywordDropped: string;    // a keyword that matched nothing, searched without
   sort: SortKey;
   widened: boolean;
   items: Restaurant[];

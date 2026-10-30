@@ -9,12 +9,17 @@ import { bigPhoto, fmtDist, fmtPrice } from "@/lib/format";
 import { StatusDot } from "./restaurant-card";
 import { Hours } from "./hours";
 import { fullHeight, useSheet } from "./use-sheet";
-import { ArrowOut, CardIcon, CashIcon, ChevronLeft, ChevronRight, ClockIcon, ForkIcon, HeartIcon, ListPlusIcon, PinIcon, QrIcon, TrainIcon, XIcon, YenIcon } from "./icons";
+import { ArrowOut, CardIcon, CashIcon, ChevronLeft, ChevronRight, ClockIcon, ForkIcon, HeartIcon, ListPlusIcon, MapIcon, PinIcon, QrIcon, TrainIcon, XIcon, YenIcon } from "./icons";
 
 const FactLine = ({ icon, main, sub }: { icon: ReactNode; main: ReactNode; sub?: ReactNode }) =>
   main ? <div className="line">{icon}<div><p className="p2">{main}</p>{sub ? <span className="sub">{sub}</span> : null}</div></div> : null;
 
 const PAY: Array<[key: "card" | "cash" | "qr", label: string, Icon: () => ReactNode]> = [["card", "Card", CardIcon], ["cash", "Cash", CashIcon], ["qr", "QR code", QrIcon]];
+
+/** A Google Maps search for the place by name and address (it opens the Maps app on a phone); coordinates when there's no address yet. */
+const googleMapsUrl = (r: Restaurant) =>
+  "https://www.google.com/maps/search/?api=1&query=" +
+  encodeURIComponent(r.address ? `${r.name} ${r.address}` : r.lat != null && r.lng != null ? `${r.lat},${r.lng}` : r.name);
 
 function ReviewItem({ v }: { v: Review }) {
   const [more, setMore] = useState(false);
@@ -36,7 +41,7 @@ function ReviewItem({ v }: { v: Review }) {
       <p className={"p2 rvw-text" + (long && !more ? " clamp" : "")}>{v.text}</p>
       {v.full && long && <button type="button" className="link" onClick={() => setMore((m) => !m)}>{more ? "Show less" : "Read more"}</button>}
       {!v.full && <a className="link" href={v.url} target="_blank" rel="noopener">Read the full review<ArrowOut /></a>}
-      {v.photos.length > 0 && <div className="rvw-photos">{v.photos.map((p) => <a key={p} href={v.url} target="_blank" rel="noopener"><img src={p} alt="" loading="lazy" /></a>)}</div>}
+      {v.photos.length > 0 && <div className="rvw-photos">{v.photos.map((p, k) => <a key={k} href={v.url} target="_blank" rel="noopener"><img src={p} alt="" loading="lazy" /></a>)}</div>}
     </article>
   );
 }
@@ -122,7 +127,10 @@ export function DetailPanel({ r, lists, locked = false, billing = false, guest =
       <div id="facts" ref={factsEl}>
         <h2>{r.name}</h2>
         <p className="p1"><span className="star">★ {r.rating ?? "–"}</span> · {r.reviews.toLocaleString()} reviews{r.distM != null ? ` · ${fmtDist(r.distM)} away` : ""}</p>
-        <a className="btn" href={r.url} target="_blank" rel="noopener">Reserve<ArrowOut /></a>
+        <div className="btn-row">
+          <a className="btn" href={r.url} target="_blank" rel="noopener">Reserve<ArrowOut /></a>
+          <a className="btn btn-ghost" href={googleMapsUrl(r)} target="_blank" rel="noopener"><MapIcon />Google Maps</a>
+        </div>
         <FactLine icon={<ForkIcon />} main={r.genreFull || r.genre} />
         {(r.hours || r.closed) && (
           <div className="line">

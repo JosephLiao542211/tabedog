@@ -12,7 +12,7 @@ const PUBLIC_API = [
 ];
 
 // what a guest (no account, "Continue as guest") may also call: the map's read-only APIs
-const GUEST_API = [/^\/api\/(search|genres|reviews|locate)$/];
+const GUEST_API = [/^\/api\/(search|suggest|place|reviews|locate)$/];
 
 /** Refresh the Supabase session cookie on every request and gate the private APIs behind sign-in. */
 export async function updateSession(request: NextRequest) {

@@ -5,9 +5,9 @@ import * as cheerio from "cheerio";
 import { cached } from "./cache";
 import { haversine } from "./geo";
 import { bigPhoto, priceYenOf } from "./format";
-import { RANGES, resolveGenre } from "./genres";
+import { nameMatches, parseQuery, RANGES } from "./genres";
 import { parseSchedule } from "./hours";
-import type { Pay, Restaurant, Review, ReviewsResponse, SearchResponse, SortKey } from "./types";
+import type { Pay, PlaceHit, Restaurant, Review, ReviewsResponse, SearchResponse, SortKey } from "./types";
 
 const MOBILE_UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
@@ -17,7 +17,9 @@ const DESKTOP_UA =
 const LIST_TTL = 15 * 60;              // seconds: a scraped listing page
 const INFO_TTL = 90 * 24 * 60 * 60;    // seconds: a restaurant's coordinates, address, hours
 const DETAIL_CONCURRENCY = 6;
-const TABELOG_PAGES_PER_CALL = 2;      // 2 x 20 results per search call
+// Tabelog pages (20 results each) per search call: small circles get 3, so a tight area still shows its best 60
+const pagesPerCall = (range: string) => (RANGES[range] <= 500 ? 3 : 2);
+const VIEW_PER_PAGE = 40;              // results per call when searching the map view (one /xml/rstmap page)
 const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
 
 export class TabelogError extends Error {
@@ -79,10 +81,16 @@ export function parseList(html: string): ListItem[] {
 
 // ---------- coordinates, hours, payment, photos from the desktop detail page ----------
 
-type Info = { v: 2; lat: number; lng: number; address: string; hours: string; pay: Pay; photos: string[]; access: string };
-type InfoResult = Omit<Info, "v"> | { lat: null; lng: null; address: ""; hours: ""; pay: null; photos: never[]; access: ""; error: string };
+// v3 adds what a listing card shows (English name, categories, budget): map-view results come with Japanese text only
+type Card = { name: string; genreFull: string; dinner: string; lunch: string };
+type Info = { v: 3; lat: number; lng: number; address: string; hours: string; pay: Pay; photos: string[]; access: string; card?: Card };
+type InfoResult = Omit<Info, "v" | "card"> | { lat: null; lng: null; address: ""; hours: ""; pay: null; photos: never[]; access: ""; error: string };
 
-async function getInfo(item: ListItem): Promise<InfoResult> {
+async function getInfo(item: Pick<ListItem, "id" | "url">): Promise<InfoResult> {
+  return getInfoCard(item, false).then(([info]) => info);
+}
+/** The detail-page half of a restaurant, plus (needCard) its card text in English. */
+async function getInfoCard(item: Pick<ListItem, "id" | "url">, needCard: boolean): Promise<[InfoResult, Card | null]> {
   return cached<Info>(`coords:${item.id}`, INFO_TTL, async () => {
     const html = await fetchHtml(item.url, DESKTOP_UA);
     const m = html.match(/center=(-?\d+\.\d+),(-?\d+\.\d+)/);
@@ -97,13 +105,20 @@ async function getInfo(item: ListItem): Promise<InfoResult> {
       qr: /qr code payments? accepted/i.test(payText),
       cash: !/cash(?:less| not accepted)/i.test(payText),
     };
-    const photos = $(".rstdtl-top-postphoto__item img").map((_, i) => bigPhoto($(i).attr("src"))).get().filter((p): p is string => !!p).slice(0, 10);
+    // two thumbnail sizes of one photo enlarge to the same URL, so dedupe after bigPhoto
+    const photos = [...new Set($(".rstdtl-top-postphoto__item img").map((_, i) => bigPhoto($(i).attr("src"))).get().filter((p): p is string => !!p))].slice(0, 10);
     const access = row("transportation").split(/\s*(?:・|^-\s|\s-\s)\s*/).map((t) => t.trim()).filter((t) => /walk|station|min/i.test(t))[0] || "";
     const hours = row("business hours").replace(/Hours and closed days may change.*$/i, "").trim();
-    return { v: 2, lat: Number(m[1]), lng: Number(m[2]), address, hours, pay, photos, access };
-  }, (v) => v?.v === 2) // bump v when the scraped shape changes; older entries get refreshed
-    .then(({ v: _v, ...info }) => info)
-    .catch((e: Error) => ({ lat: null, lng: null, address: "", hours: "", pay: null, photos: [], access: "", error: e.message }));
+    const budget = $(".rdheader-budget__price-target").map((_, e) => $(e).text().replace(/\s+/g, " ").trim()).get();
+    const price = (t?: string) => (!t || t === "-" ? "" : t);
+    return {
+      v: 3, lat: Number(m[1]), lng: Number(m[2]), address, hours, pay, photos, access,
+      card: { name: row("restaurant name") || $(".display-name").first().text().trim(), genreFull: row("categories"), dinner: price(budget[0]), lunch: price(budget[1]) },
+    };
+    // bump v when the scraped shape changes; older entries get refreshed (v2 still serves listings, which carry their own card text)
+  }, (v) => v?.v === 3 || (!needCard && (v as { v?: number })?.v === 2))
+    .then(({ v: _v, card, ...info }): [InfoResult, Card | null] => [info, card ?? null])
+    .catch((e: Error): [InfoResult, Card | null] => [{ lat: null, lng: null, address: "", hours: "", pay: null, photos: [], access: "", error: e.message }, null]);
 }
 
 // ---------- open / closed right now (JST) ----------
@@ -155,14 +170,16 @@ async function loadPage(url: string): Promise<Page> {
 export type SearchParams = {
   lat: number; lon: number;
   range: string;            // F..E Tabelog radius code
-  q: string;                // free text, resolved to a Tabelog genre
+  q: string;                // free text: a genre, search conditions and a keyword (see parseQuery)
   sort: SortKey;
   pay: Set<string>;         // card, qr, emoney
   pmin: number; pmax: number; meal: "dinner" | "lunch";
   minRating: number;
   open: boolean;            // only places open right now (JST)
-  page: number;             // 1-based, each page = TABELOG_PAGES_PER_CALL Tabelog pages
+  page: number;             // 1-based, each page = pagesPerCall(range) Tabelog pages
+  view?: View | null;       // search exactly this box (the map view) instead of the circle around lat/lon
 };
+export type View = { s: number; w: number; n: number; e: number };
 
 export function locationFrom(sp: URLSearchParams, cookieValue?: string): { lat: number; lon: number } | null {
   let lat = parseFloat(sp.get("lat") ?? ""), lon = parseFloat(sp.get("lon") ?? "");
@@ -188,27 +205,109 @@ export function parseSearchParams(sp: URLSearchParams, loc: { lat: number; lon: 
     minRating: clamp(parseFloat(sp.get("minRating") ?? "") || 0, 0, 5),
     open: sp.get("open") === "1",
     page: clamp(parseInt(sp.get("page") ?? "", 10) || 1, 1, 30),
+    view: viewFrom(sp.get("bbox")),
   };
+}
+
+// "s,w,n,e" in degrees; no bigger than a few km, since past that the circle search covers it
+function viewFrom(v: string | null): View | null {
+  const [s, w, n, e] = String(v || "").split(",").map(Number);
+  if (![s, w, n, e].every(Number.isFinite) || n <= s || e <= w || n - s > 0.05 || e - w > 0.05 || Math.abs(n) > 90 || Math.abs(e) > 180) return null;
+  return { s, w, n, e };
+}
+
+// Tabelog's category codes for the genre slugs, deepest level (the map search filters by cat0..cat3 prefixes of it)
+const CATS: Record<string, string> = {
+  RC: "RC", ramen: "MC01", sushi: "RC0102", washoku: "RC01", japanese: "RC0101", yakiniku: "RC1301", yakitori: "RC010601",
+  izakaya: "RC2101", tempura: "RC0103", tonkatsu: "RC012501", soba: "RC010401", udon: "RC012301", unagi: "RC010501",
+  gyouza: "RC0308", seafood: "RC0112", curry: "RC12", chinese: "RC03", korea: "RC0401", thai: "RC040201", steak: "RC020101",
+  hamburger: "RC022004", hamburgersteak: "RC020903", pizza: "RC021203", pasta: "RC021202", italian: "RC0212", french: "RC0211",
+  spain: "RC0213", bistro: "RC021102", yoshoku: "RC020901", okonomiyaki: "RC010901", monjya: "RC010902", nabe: "RC14",
+  syabusyabu: "RC012101", motsu: "RC1403", horumon: "RC1303", kushiage: "RC012503", teishoku: "RC980103", okinawafood: "RC019915",
+  cafe: "SC10", kissaten: "SC1002", sweets: "SC02", cake: "SC0212", pan: "SC01", tapioca: "SC1009", bar: "BC", viking: "RC9810",
+  ryokan: "YC0101",
+};
+
+const attr = (tag: string, name: string) => (tag.match(new RegExp(`\\s${name}="([^"]*)"`)) || [])[1] ?? "";
+
+// one page of Tabelog's map search (/xml/rstmap): the best-rated places inside a box, with coordinates already on them.
+// The text there is Japanese, so names, categories and budgets come from the English detail pages (cached for months).
+async function loadViewPage(url: string): Promise<Page & { total: number }> {
+  return cached(`rstmap:${url}`, LIST_TTL, async () => {
+    const xml = await fetchHtml(url, DESKTOP_UA);
+    const total = Number(attr(xml.match(/<srchinfo[^>]*>/)?.[0] ?? "", "cnt")) || 0;
+    const markers = (xml.match(/<marker\s[^>]*>/g) || []).map((m) => ({
+      id: attr(m, "id"), url: `https://tabelog.com/en${attr(m, "rsturl")}`, jaName: attr(m, "rstname"),
+      score: parseFloat(attr(m, "score")) || null, reviews: Number(attr(m, "rvwcnt")) || 0,
+      lat: Number(attr(m, "lat")), lng: Number(attr(m, "lng")), image: attr(m, "image_url") || null,
+    })).filter((m) => /^\d+$/.test(m.id));
+    const info = await mapLimit(markers, DETAIL_CONCURRENCY, (m) => getInfoCard(m, true));
+    const items = markers.map((m, i): PageItem => {
+      const [inf, card] = info[i], genreFull = card?.genreFull || "";
+      return {
+        ...inf,
+        id: m.id, url: m.url, name: card?.name || m.jaName, rating: m.score, reviews: m.reviews,
+        station: "", tabelogDistanceM: null,
+        genre: genreFull.split(",")[0].replace(/\s*\(.*?\)\s*/g, "").trim(), genreFull,
+        dinner: card?.dinner || "", lunch: card?.lunch || "", closed: "", image: m.image,
+        // the marker's own coordinates when the detail page failed
+        lat: inf.lat ?? m.lat, lng: inf.lng ?? m.lng,
+      } as PageItem;
+    });
+    return { source: url, fetchedAt: new Date().toISOString(), items, total };
+  });
 }
 
 /** The one search. Every filter and sort is applied here so the client only renders. */
 export async function search(p: SearchParams): Promise<SearchResponse> {
-  const genre = resolveGenre(p.q);
+  const parsed = parseQuery(p.q);
+  const { genre, features } = parsed;
+  // words in the search can stand in for the price and open-now filters, but never override them
+  let { pmin, pmax, open } = p;
   const q = new URLSearchParams({ lat: p.lat.toString(), lon: p.lon.toString(), LstRange: p.range });
+  for (const f of features) for (const [k, v] of new URLSearchParams(f.param)) {
+    if (k === "pmin" || k === "pmax") { if (!p.pmin && !p.pmax) { if (k === "pmin") pmin = +v; else pmax = +v; } }
+    else if (k === "open") open = true;
+    else q.set(k, v);
+  }
   if (p.sort === "rating" || p.minRating > 0) q.set("SrtT", "rt"); // Tabelog sorts by rating natively
   if (p.pay.has("card")) q.set("ChkCard", "1");
   if (p.pay.has("qr")) q.set("ChkQrcodePayment", "1");
   if (p.pay.has("emoney")) q.set("ChkEMoneyPayment", "1");
-  if (p.pmin || p.pmax) { q.set("LstCos", String(p.pmin)); q.set("LstCosT", String(p.pmax)); q.set("RdoCosTp", p.meal === "lunch" ? "1" : "2"); }
-  const pageUrl = (n: number) => `https://s.tabelog.com/en/rstLst/${genre.code}/${n > 1 ? n + "/" : ""}?${q}`;
-  const first = (p.page - 1) * TABELOG_PAGES_PER_CALL + 1;
-  const urls = Array.from({ length: TABELOG_PAGES_PER_CALL }, (_, i) => pageUrl(first + i));
+  if (pmin || pmax) { q.set("LstCos", String(pmin)); q.set("LstCosT", String(pmax)); q.set("RdoCosTp", p.meal === "lunch" ? "1" : "2"); }
+  const per = pagesPerCall(p.range), first = (p.page - 1) * per + 1;
+  const urlsFor = (keyword: string) => {
+    const qq = new URLSearchParams(q);
+    if (keyword) qq.set("sw", keyword);
+    // a keyword with no genre searches /rstLst/ itself: under /rstLst/RC/ Tabelog's keyword matching goes loose
+    const base = keyword && genre.code === "RC" ? "https://s.tabelog.com/en/rstLst/" : `https://s.tabelog.com/en/rstLst/${genre.code}/`;
+    return Array.from({ length: per }, (_, i) => `${base}${first + i > 1 ? first + i + "/" : ""}?${qq}`);
+  };
+  // the map view, when the map is zoomed in past the smallest circle: Tabelog's map search takes a box, so every
+  // result is on screen. It only understands Japanese keywords, so a search with one keeps to the circle.
+  const view = p.view && CATS[genre.code] && !parsed.keyword ? p.view : null;
+  const viewUrl = () => {
+    const vq = new URLSearchParams(q);
+    for (const k of ["lat", "lon", "LstRange"]) vq.delete(k);
+    const cat = CATS[genre.code];
+    vq.set("maxLat", String(view!.n)); vq.set("minLat", String(view!.s)); vq.set("maxLon", String(view!.e)); vq.set("minLon", String(view!.w));
+    [2, 4, 6, 8].forEach((n, i) => { if (cat.length >= n) vq.set(`cat${i}`, cat.slice(0, n)); });
+    vq.set("SrtT", "rt"); // best first whatever the sort: the box is the area, the sort orders what's in it
+    vq.set("lst", String(VIEW_PER_PAGE)); vq.set("pg", String(p.page));
+    return `https://tabelog.com/xml/rstmap?${vq}`;
+  };
 
-  let pages: Page[];
-  try { pages = await Promise.all(urls.map(loadPage)); }
-  catch (e) { throw new TabelogError((e as Error).message, urls[0]); }
+  let urls = view ? [viewUrl()] : urlsFor(parsed.keyword), pages: Page[], keywordDropped = false, total: number | null = null;
+  try {
+    if (view) { const pg = await loadViewPage(urls[0]); pages = [pg]; total = pg.total; }
+    else pages = await Promise.all(urls.map(loadPage));
+    // a keyword nothing matches, alongside a genre or a condition: those still mean something, so search without it
+    if (!view && parsed.keyword && p.page === 1 && !pages[0].items.length && (genre.code !== "RC" || features.length)) {
+      urls = urlsFor(""); pages = await Promise.all(urls.map(loadPage)); keywordDropped = true;
+    }
+  } catch (e) { throw new TabelogError((e as Error).message, urls[0]); }
 
-  const origin = { lat: p.lat, lng: p.lon };
+  const origin = view ? { lat: (view.n + view.s) / 2, lng: (view.e + view.w) / 2 } : { lat: p.lat, lng: p.lon };
   const seen = new Set<string>();
   let items: Restaurant[] = [];
   for (const pg of pages) for (const it of pg.items) if (!seen.has(it.id)) {
@@ -221,21 +320,64 @@ export async function search(p: SearchParams): Promise<SearchResponse> {
       open: openNow(rest.hours, rest.closed),
     });
   }
-  const lastFull = pages[pages.length - 1].items.length >= 20;
+  const lastFull = total != null ? p.page * VIEW_PER_PAGE < total : pages[pages.length - 1].items.length >= 20;
   const last = items[items.length - 1];
   const ratingCutoff = p.minRating > 0 && !!last && last.rating != null && last.rating < p.minRating;
   if (p.minRating > 0) items = items.filter((r) => (r.rating ?? 0) >= p.minRating);
-  if (p.open) items = items.filter((r) => r.open === true);
+  if (open) items = items.filter((r) => r.open === true);
   const key: Record<SortKey, (r: Restaurant) => number> = {
     distance: (r) => r.distM ?? 1e12, rating: (r) => -(r.rating ?? 0), reviews: (r) => -(r.reviews ?? 0),
     price_asc: (r) => priceYenOf(r, p.meal) ?? 1e12, price_desc: (r) => -(priceYenOf(r, p.meal) ?? -1), // unknown budgets sink to the bottom either way
   };
   items.sort((a, b) => key[p.sort](a) - key[p.sort](b));
-  const widened = items.length > 0 && items.every((r) => r.distM != null && r.distM > RANGES[p.range]);
+  // Tabelog's keyword matching is loose, so places actually named that come first ("ichiran" brings up Ichikan too)
+  if (parsed.keyword && !keywordDropped) {
+    const named = items.filter((r) => nameMatches(r.name, parsed.keyword));
+    if (named.length) items = [...named, ...items.filter((r) => !named.includes(r))];
+  }
+  // the box's half-width stands in for a radius: how far "moved away" is, and the "within …" text
+  const radiusM = view ? Math.round(Math.min(haversine({ lat: view.s, lng: origin.lng }, { lat: view.n, lng: origin.lng }), haversine({ lat: origin.lat, lng: view.w }, { lat: origin.lat, lng: view.e })) / 2) : RANGES[p.range];
+  const widened = !view && items.length > 0 && items.every((r) => r.distM != null && r.distM > RANGES[p.range]);
   return {
     fetchedAt: pages[0].fetchedAt, source: urls[0], page: p.page, hasMore: lastFull && !ratingCutoff,
-    origin, radiusM: RANGES[p.range], genre, sort: p.sort, widened, items,
+    origin, radiusM, view, total, genre, features: features.map((f) => f.label), keyword: keywordDropped ? "" : parsed.keyword,
+    keywordDropped: keywordDropped ? parsed.keyword : "", sort: p.sort, widened, items,
   };
+}
+
+// ---------- restaurants by name, for the search suggestions ----------
+/** Restaurants whose names match what's being typed: ones near `origin` first, then the best known anywhere in Japan. */
+export async function suggestPlaces(text: string, origin: { lat: number; lon: number } | null, max = 5): Promise<PlaceHit[]> {
+  const { keyword, features } = parseQuery(text);
+  const sw = (keyword || text).trim();
+  if (sw.length < 2) return [];
+  const list = (url: string) => cached<ListItem[]>(`names:${url}`, LIST_TTL, async () => parseList(await fetchHtml(url, MOBILE_UA))).catch(() => [] as ListItem[]);
+  const [near, anywhere] = await Promise.all([
+    origin ? list(`https://s.tabelog.com/en/rstLst/?${new URLSearchParams({ lat: origin.lat.toFixed(4), lon: origin.lon.toFixed(4), LstRange: "C", sw })}`) : [],
+    list(`https://s.tabelog.com/en/rstLst/?${new URLSearchParams({ sw })}`),
+  ]);
+  // Tabelog's keyword search is fuzzy ("ichiran" brings up Ichirin), so keep only real name matches: on the whole text,
+  // or failing that the keyword alone ("afuri ramen" still finds AFURI) unless the text is about features ("quiet sushi for a dat…"
+  // is still being typed, not a name). Plenty nearby? Leave out the rest of Japan.
+  const match = (words: string) => (it: ListItem) => nameMatches(it.name, words);
+  const pickFrom = (words: string) => {
+    const n = near.filter(match(words));
+    return n.length >= 3 ? n : [...n, ...anywhere.filter(match(words))];
+  };
+  let found = pickFrom(text);
+  if (!found.length && keyword && !features.length) found = pickFrom(keyword);
+  const seen = new Set<string>();
+  return found.filter((it) => !seen.has(it.id) && !!seen.add(it.id)).slice(0, max)
+    .map(({ id, url, name, rating, reviews, station, tabelogDistanceM, genre, genreFull, dinner, lunch, closed, image }) =>
+      ({ id, url, name, rating, reviews, station, tabelogDistanceM, genre, genreFull, dinner, lunch, closed, image }));
+}
+
+/** The detail-page half of a restaurant (coordinates, hours, payment, photos), for one picked from the suggestions. */
+export async function placeInfo(url: string, closed = "") {
+  if (!isRestaurantUrl(url)) throw new TabelogError("not a Tabelog restaurant URL", url);
+  const info = await getInfo({ id: url.match(/(\d+)\/$/)![1], url } as ListItem);
+  if (info.lat == null) throw new TabelogError("error" in info ? info.error : "no coordinates", url);
+  return { ...info, open: openNow(info.hours, closed) };
 }
 
 // ---------- reviews (desktop review list + the first few full review pages) ----------
@@ -266,7 +408,7 @@ function parseReviewItem($: cheerio.CheerioAPI, el: Parameters<cheerio.CheerioAP
     reviewer: clean(it.find(".rvw-item__rvwr-name").text()),
     reviewerUrl: it.find(".rvw-item__rvwr-name").attr("href") || "",
     avatar: avatar && /^https?:/.test(avatar) ? avatar : null,
-    photos: it.find(".rvw-photo__list-item img").map((_, i) => bigPhoto($(i).attr("src") || $(i).attr("data-src"))).get().filter((p): p is string => !!p).slice(0, 6),
+    photos: [...new Set(it.find(".rvw-photo__list-item img").map((_, i) => bigPhoto($(i).attr("src") || $(i).attr("data-src"))).get().filter((p): p is string => !!p))].slice(0, 6),
   };
 }
 
@@ -274,7 +416,8 @@ function parseReviewItem($: cheerio.CheerioAPI, el: Parameters<cheerio.CheerioAP
 export async function getReviews(url: string): Promise<ReviewsResponse> {
   if (!isRestaurantUrl(url)) throw new TabelogError("not a Tabelog restaurant URL", url);
   const id = url.match(/(\d+)\/$/)![1];
-  return cached<ReviewsResponse>(`reviews:v2:${id}`, REVIEWS_TTL, async () => {
+  // v3: review photo lists are deduped
+  return cached<ReviewsResponse>(`reviews:v3:${id}`, REVIEWS_TTL, async () => {
     const $ = cheerio.load(await fetchHtml(url + "dtlrvwlst/", DESKTOP_UA));
     const seen = new Set<string>(); // a pinned review can appear twice on the page
     const items = $(".rvw-item").map((_, el) => parseReviewItem($, el)).get()
