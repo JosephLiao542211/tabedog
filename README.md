@@ -92,6 +92,10 @@ Scraped pages are cached in the `scrape_cache` table (service role only) with a 
 
 Cold searches take 2–4 s (one detail page per restaurant, 6 in parallel); warm ones are near-instant.
 
+## Admin dashboard
+
+`/admin` shows user counts: total, new sign-ups, recent sign-ins, Premium and a 30-day sign-up chart. It uses the same `BLOG_ADMIN_EMAILS` gate as the blog tools and only displays aggregates. Guests have no account, so they aren't counted.
+
 ## Blog
 
 `/blog` is a Notion-style blog; `/admin/blog` is the dashboard for writing it. Posts are markdown in the `posts` table, images go to the public `blog` Storage bucket (migration `20261023000000_blog.sql`).

@@ -927,8 +927,9 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
 .cms { min-height: 100%; background: var(--bg); }
 .cms a { color: inherit; }
 .cms-top { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 20px; border-bottom: 1px solid var(--line); background: rgba(253,255,252,.92); backdrop-filter: blur(12px); }
-.cms-top nav { display: flex; gap: 18px; }
-.cms-top nav a { font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; }
+.cms-top .site-brand { flex: none; }
+.cms-top nav { display: flex; gap: 18px; min-width: 0; margin-left: 16px; overflow-x: auto; scrollbar-width: none; }
+.cms-top nav a { flex: none; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; }
 .cms-top nav a:hover { color: var(--ink); }
 .cms-top-tag { margin-left: 4px; padding: 2px 7px; border-radius: 6px; background: var(--ink); color: var(--bg); font-size: 11px; font-weight: 800; letter-spacing: .4px; }
 .cms-main { max-width: 960px; margin: 0 auto; padding: 36px 20px 80px; }
@@ -1026,6 +1027,31 @@ textarea.cms-input { height: auto; padding: 8px 10px; resize: vertical; }
 .cms-advanced[open] { display: grid; gap: 12px; }
 .cms-preview-banner { position: sticky; top: 56px; z-index: 50; padding: 10px 16px; text-align: center; font-size: 14px; font-weight: 600; background: var(--ink); color: var(--bg); }
 .cms-preview-banner a { color: #ffb4a6; }
+
+/* ---- CMS: dashboard home (/admin) ---- */
+.cms-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
+@media (min-width: 760px) { .cms-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.cms-tile { display: grid; gap: 4px; align-content: start; padding: 16px; border: 1px solid var(--line); border-radius: 14px; }
+.cms-tile-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+.cms-tile-value { font-size: 34px; font-weight: 800; line-height: 1.15; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.cms-tile-sub { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.cms-chart-panel { margin-top: 12px; }
+.cms-chart { position: relative; padding-top: 22px; }
+.cms-chart-max { position: absolute; top: 2px; left: 0; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cms-bars { list-style: none; margin: 0; padding: 0; display: flex; align-items: stretch; height: 180px; border-top: 1px solid var(--line); border-bottom: 1px solid #cfd2cc; }
+.cms-bars li { position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: flex-end; padding: 0 1px; outline: 0; }
+.cms-bars li:hover, .cms-bars li:focus-visible { background: var(--hover); }
+.cms-bar-fill { display: block; width: 100%; max-width: 24px; margin: 0 auto; height: var(--h); min-height: 3px; border-radius: 4px 4px 0 0; background: var(--accent); }
+.cms-bar-tip { position: absolute; bottom: calc(var(--h) + 6px); left: 50%; transform: translateX(-50%); z-index: 2; padding: 4px 8px; border-radius: 6px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0; }
+.cms-bars li:nth-child(-n+5) .cms-bar-tip { left: 0; transform: none; }
+.cms-bars li:nth-last-child(-n+5) .cms-bar-tip { left: auto; right: 0; transform: none; }
+.cms-bars li:hover .cms-bar-tip, .cms-bars li:focus-visible .cms-bar-tip { opacity: 1; }
+.cms-chart-x { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.cms-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.cms-table th, .cms-table td { padding: 6px 0; border-bottom: 1px solid var(--line); text-align: left; }
+.cms-table th { font-weight: 700; color: var(--muted); }
+.cms-table th:last-child, .cms-table td:last-child { text-align: right; }
+.cms-note { margin: 14px 0 0; }
 
 /* ---- CMS: draft with AI (/admin/blog/agent) ---- */
 .agent-lede { max-width: 640px; margin: 10px 0 24px; color: var(--muted); font-size: 16px; line-height: 1.5; }
