@@ -18,6 +18,7 @@ import { RestaurantCard } from "./restaurant-card";
 import { ListsPanel, type ListDraft } from "./lists";
 import { GuestLimitPrompt, ManageBillingButton, PlanBadge, PREMIUM_PRICE_LABEL, UpgradeButton, UpgradePrompt } from "./upgrade";
 import { GUEST_LEFT_HEADER, GUEST_SEARCH_LIMIT } from "@/lib/guest";
+import { clearSavedSearches, readSavedSearch, savedAgo, saveSearch, searchKey } from "@/lib/saved-searches";
 import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
 import { ChevronRight, FilterIcon, ForkIcon, GearIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, PinIcon, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, SparkIcon, StarIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
@@ -28,7 +29,8 @@ maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
 
 type Loc = { lat: number; lng: number; acc?: number | null; src?: string; at?: number };
 type Center = { lat: number; lng: number };
-type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean; preview?: boolean };
+// refresh: fresh results replacing a saved copy, which may be on screen for a while, so they leave the camera and any open detail alone
+type LoadOpts = { append?: boolean; keepView?: boolean; fit?: boolean; preview?: boolean; refresh?: boolean };
 type Panel = "filter" | "sort" | "account" | null;
 // a row in the dropdown under the search bar
 type SuggestRow = { kind: "search" | Suggestion["kind"]; label: string; sub: string; value: string } | { kind: "place"; label: string; sub: string; place: PlaceHit };
@@ -38,6 +40,8 @@ const COOKIE = "tabelog_loc";
 // each has an icon in dish-icons.tsx
 const QUICK = ["Ramen", "Sushi", "Izakaya", "Yakiniku", "Cafe", "Yakitori", "Tempura", "Udon"];
 const SORTS: SortKey[] = ["distance", "rating", "reviews", "price_asc", "price_desc"];
+// guests have few searches, so a saved copy this recent (ms) is shown as it is rather than spending one to refresh it
+const GUEST_SAVED_FRESH = 30 * 60e3;
 
 // ---------- my location cookie ----------
 function readLoc(): Loc | null {
@@ -189,6 +193,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     reqId: 0,
     hasMore: false,
     detailOpen: false,
+    detailId: null as string | null,
+    area: { c: null as (Center & { radiusM: number }) | null, box: null as Box | null }, // the outline to draw once the map is ready
     observer: null as IntersectionObserver | null,
     focus: null as Restaurant | null, // a restaurant picked from the suggestions, opened once the search around it lands
     near: [] as Array<Center & { range: string }>, // neighbouring areas prefetched around the last search
@@ -266,6 +272,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   const writeLoc = (loc: Loc) => { writeLocCookie(loc); renderMe(); };
 
   function setSearchArea(c: (Center & { radiusM: number }) | null, box: Box | null = null) {
+    E.area = { c, box };
     const s = E.map?.getSource("search-area") as maplibregl.GeoJSONSource | undefined;
     if (s) s.setData({ type: "FeatureCollection", features: box ? [boxGeo(box)] : c ? [circleGeo(c.lat, c.lng, c.radiusM)] : [] });
   }
@@ -307,11 +314,11 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
 
   // ---------- detail / highlight ----------
   function closeDetail() {
-    E.detailOpen = false; setDetail(null);
+    E.detailOpen = false; E.detailId = null; setDetail(null);
     document.querySelectorAll(".pin.active").forEach((p) => p.classList.remove("active"));
   }
   function openDetail(r: Restaurant) {
-    E.detailOpen = true; setDetail(r);
+    E.detailOpen = true; E.detailId = r.id; setDetail(r);
     // the detail sheet lands on top; leave the map visible underneath for when it closes
     if (mobile && listSheet.stop === "full") listSheet.snapTo("half");
   }
@@ -339,7 +346,14 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   // ---------- results -> list + pins ----------
   function render(newItems: Restaurant[], opts: LoadOpts) {
     const map = E.map; if (!map) return;
-    if (!opts.append) { closeDetail(); for (const k in E.markers) { E.markers[k].remove(); delete E.markers[k]; } E.items = []; }
+    if (opts.refresh) {
+      const fresh = E.detailId ? newItems.find((r) => r.id === E.detailId) : null;
+      if (fresh) setDetail(fresh);
+      // the same places in the same order: the pins are already right
+      if (newItems.length === E.items.length && newItems.every((r, i) => r.id === E.items[i].id)) { E.items = newItems; setItems(newItems); return; }
+    } else if (!opts.append) closeDetail();
+    if (!opts.append) { for (const k in E.markers) { E.markers[k].remove(); delete E.markers[k]; } E.items = []; }
+    else { const have = new Set(E.items.map((r) => r.id)); newItems = newItems.filter((r) => !have.has(r.id)); } // saved results came from a spot nearby, so page 2 can overlap them
     const start = E.items.length;
     E.items = E.items.concat(newItems);
     setItems(E.items);
@@ -350,7 +364,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       pin.addEventListener("click", (e) => { e.stopPropagation(); highlight(r.id, false); });
       E.markers[r.id] = new maplibregl.Marker({ element: pin, anchor: "bottom", offset: [0, 2] }).setLngLat([r.lng, r.lat]).addTo(map);
     });
-    if (!E.items.length || opts.append) return;
+    if (E.detailId) E.markers[E.detailId]?.getElement().classList.add("active");
+    if (!E.items.length || opts.append || opts.refresh) return;
     const bounds = new maplibregl.LngLatBounds();
     E.items.forEach((r) => { if (r.lat != null && r.lng != null) bounds.extend([r.lng, r.lat]); });
     const origin = E.center || readLoc();
@@ -362,6 +377,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   }
 
   // ---------- load ----------
+  const owner = guest ? "guest" : userId;
   function describe(data: SearchResponse) {
     const n = E.items.length + (E.hasMore ? "+" : "");
     const where = E.center ? "around here" : "around you";
@@ -379,27 +395,45 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     E.searchedOnce = true; setSearched(true);
     writeHash(E.filters, E.center);
     const f = E.filters, view = E.view, qs = searchQuery(f, origin, E.page, view), ready = isCached(qs);
-    const pending = fetchSearch(qs);
-    let previewed = false;
-    if (!opts.append && !ready) {
-      // a filter or sort change shows its effect on what's loaded right away, while Tabelog fills in the rest
-      if (opts.preview && E.items.length) { const p = previewItems(E.items, f); render(p, { keepView: true }); previewed = p.length > 0; setCount("Updating…"); }
-      else setCount("Searching Tabelog…");
-    }
-    if (!ready) { setLoading(true); setSkeleton(opts.append ? "more" : previewed ? null : "new"); }
-    try {
-      const { data, left } = await pending;
-      if (left != null) setGuestLeft(Number(left));
-      if (my !== E.reqId) return;
+    const show = (data: SearchResponse, o: LoadOpts) => {
       E.hasMore = !!data.hasMore;
-      render(data.items, opts);
+      render(data.items, o);
       E.lastSearched = { lat: data.origin.lat, lng: data.origin.lng, radiusM: data.radiusM }; E.quietMove = false;
-      if (!opts.append) { // reference = where the map settles after showing these results
+      if (!o.append && !o.refresh) { // reference = where the map settles after showing these results
         const setRef = () => { if (!E.map) return; E.refCenter = visualCenter(); E.pendingRef = false; checkMoved(); };
         if (E.map?.isMoving()) { E.pendingRef = true; E.map.once("moveend", setRef); } else setRef();
       }
       setSearchArea(E.center ? E.lastSearched : null, data.view);
       setCount(describe(data));
+    };
+    // seen this search lately on this device? show that copy now and bring it up to date behind it
+    // (not "open now" or an exact map box, which a saved copy can't answer, nor a place being opened by name)
+    const saved = !ready && !opts.append && !view && !f.open && !E.focus
+      ? readSavedSearch(owner, searchKey(qs), origin, Math.max(RANGES[f.range] * 0.25, 100)) : null;
+    if (saved) {
+      show(saved.data, opts);
+      if (guest && Date.now() - saved.at < GUEST_SAVED_FRESH) {
+        setCount(`${describe(saved.data)} · saved ${savedAgo(saved.at)}`);
+        setLoading(false); setSkeleton(null);
+        prefetch(f, origin, view);
+        return;
+      }
+      setCount(`${describe(saved.data)} · updating…`);
+    }
+    const pending = fetchSearch(qs);
+    let previewed = false;
+    if (!opts.append && !ready && !saved) {
+      // a filter or sort change shows its effect on what's loaded right away, while Tabelog fills in the rest
+      if (opts.preview && E.items.length) { const p = previewItems(E.items, f); render(p, { keepView: true }); previewed = p.length > 0; setCount("Updating…"); }
+      else setCount("Searching Tabelog…");
+    }
+    if (!ready) { setLoading(true); setSkeleton(opts.append ? "more" : previewed || saved ? null : "new"); }
+    try {
+      const { data, left } = await pending;
+      if (left != null) setGuestLeft(Number(left));
+      if (my !== E.reqId) return;
+      show(data, saved ? { ...opts, refresh: true } : opts);
+      if (!opts.append && !view && data.items.length) saveSearch(owner, searchKey(qs), origin, data);
       if (E.focus && !opts.append) {
         // a restaurant picked by name: open it, with its pin when the search around it brought it up
         const r = E.focus; E.focus = null;
@@ -412,6 +446,13 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       E.focus = null;
       if (err.status === 401) { window.location.assign("/login"); return; }
       if (my !== E.reqId) return;
+      if (saved) { // the saved copy is better than nothing, so it stays
+        const limited = err.status === 429 && guest;
+        if (limited) setGuestLeft(0);
+        setCount(`${limited ? "Out of guest searches" : "Tabelog didn’t answer"} · showing results saved ${savedAgo(saved.at)}`);
+        E.hasMore = false;
+        return;
+      }
       if (err.status === 429 && guest && err.body?.resetAt) {
         setGuestWall(err.body.resetAt);
         setCount("Out of guest searches for this hour");
@@ -468,12 +509,15 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
     writeLoc(loc);
     const movedFar = !prev || haversine(prev, loc) > 100;
     const upgraded = !!prev && isCoarse(prev) && !isCoarse(loc);
+    const toLoc = () => E.map?.easeTo({ center: [loc.lng, loc.lat], zoom: Math.max(E.map.getZoom(), 14.5), offset: viewOffset(), duration: 0 });
+    // before the search: saved results show right away and frame themselves
+    if (upgraded) toLoc();
     if (!E.searchedOnce || (movedFar && !E.center) || upgraded) {
       if (upgraded || movedFar) setCenter(null);
       E.page = 1;
       load({ fit: true });
     }
-    if ((!E.searchedOnce || upgraded) && E.map) E.map.easeTo({ center: [loc.lng, loc.lat], zoom: Math.max(E.map.getZoom(), 14.5), offset: viewOffset(), duration: 0 });
+    if (!E.searchedOnce) toLoc();
   }
   async function ensureLocation() {
     const saved = readLoc();
@@ -590,6 +634,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       tintMap(map);
       map.addSource("search-area", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "search-area-line", type: "line", source: "search-area", paint: { "line-color": "#ff6347", "line-width": 1.5, "line-dasharray": [3, 3], "line-opacity": 0.6 } });
+      setSearchArea(E.area.c, E.area.box); // saved results can get here before the map does
       renderMe();
     });
     map.on("movestart", (e) => { if (e.originalEvent) E.quietMove = false; });
@@ -633,6 +678,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
       if (E.watchId != null) navigator.geolocation.clearWatch(E.watchId);
       E.watchId = null;
       map.remove(); E.map = null; E.markers = {}; E.listMarkers = {}; E.me = null;
+      // results on this map went with it, so a remount (StrictMode does one) has to search and draw again
+      E.searchedOnce = false; E.items = []; E.reqId++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -869,8 +916,8 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
             <p className="p1">Guest</p>
             <p className="p2">{guestLeft} of {GUEST_SEARCH_LIMIT} guest searches left this hour. Create a free account for unlimited searches.</p>
             <a href="/login" className="btn">Sign in or create account</a>
-            <form action="/auth/signout" method="post" className="foot">
-              <span className="sub">Nothing is saved in guest mode.</span>
+            <form action="/auth/signout" method="post" className="foot" onSubmit={clearSavedSearches}>
+              <span className="sub">Nothing is saved to an account in guest mode.</span>
               <button type="submit" className="chip"><SignOutIcon />Leave guest mode</button>
             </form>
           </div>
@@ -891,7 +938,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
               <span className="account-link-text"><b>Account settings</b><span className="sub">Email, password and plan</span></span>
               <ChevronRight />
             </a>
-            <form action="/auth/signout" method="post" className="foot">
+            <form action="/auth/signout" method="post" className="foot" onSubmit={clearSavedSearches}>
               <span className="sub">{plan === "premium" ? "Saved places sync to your account." : "Search is free for everyone."}</span>
               <button type="submit" className="chip"><SignOutIcon />Sign out</button>
             </form>

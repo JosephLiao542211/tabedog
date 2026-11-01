@@ -2,6 +2,7 @@
 
 // /account: the signed-in user's email, password, plan and subscription, plus sign out and delete.
 // Email and password changes go straight to Supabase Auth from the browser; billing goes through Stripe's portal.
+import { clearSavedSearches } from "@/lib/saved-searches";
 import { useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -172,6 +173,7 @@ function DeleteAccount({ email, hasSub }: { email: string; hasSub: boolean }) {
       const res = await fetch("/api/account/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm }) });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(body.error || "Couldn’t delete your account.");
+      clearSavedSearches();
       window.location.assign("/");
     } catch (err) {
       setStatus({ kind: "error", text: (err as Error).message });
@@ -229,7 +231,7 @@ export function AccountPage({ email, pendingEmail, memberSince, plan, premiumUnt
             <PasswordForm email={email} />
           </Card>
           <Card title="Sign out or leave" danger>
-            <form action="/auth/signout" method="post">
+            <form action="/auth/signout" method="post" onSubmit={clearSavedSearches}>
               <button type="submit" className="chip"><SignOutIcon />Sign out</button>
             </form>
             <DeleteAccount email={email} hasSub={!!subscription && subscription.status !== "canceled"} />
