@@ -23,7 +23,7 @@ import { DetailPanel } from "./detail-panel";
 import { activeFilterCount, DEFAULT_FILTERS, FilterPanel, SortPanel, type Filters } from "./filter-panel";
 import { ChevronRight, FilterIcon, ForkIcon, GearIcon, HEART_SVG, HeartIcon, Logo, MEDAL, PERSON_SVG, PinIcon, type MedalRank, RecenterIcon, RefreshIcon, SearchIcon, SignOutIcon, SortIcon, SparkIcon, StarIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "./icons";
 import { DishIcon } from "./dish-icons";
-import { fullHeight, sheetPx, useMobile, useSheet } from "./use-sheet";
+import { DETAIL_PEEK, fullHeight, sheetPx, useMobile, useSheet } from "./use-sheet";
 
 maplibregl.setWorkerUrl(workerUrl(maplibregl.getVersion()));
 
@@ -244,7 +244,7 @@ export default function TabeDogApp({ email, userId, plan, billing, guest = false
   // ---------- geometry helpers: the floating panels cover part of the map ----------
   const wide = () => window.innerWidth > 800;
   // how much of the bottom of the map a sheet covers on a phone
-  const cover = () => E.detailOpen ? (sheetPx("--sheet-detail") || window.innerHeight * 0.72) : (sheetPx("--sheet") || window.innerHeight * 0.44);
+  const cover = () => E.detailOpen ? (sheetPx("--sheet-detail") || window.innerHeight * DETAIL_PEEK) : (sheetPx("--sheet") || window.innerHeight * 0.44);
   const fitPadding = () => wide()
     ? { left: 380 + 48, top: 120, right: E.detailOpen ? 360 + 48 : 80, bottom: 60 }
     : { left: 30, top: 120, right: 30, bottom: Math.min(cover(), window.innerHeight * 0.6) + 90 };

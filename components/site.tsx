@@ -154,6 +154,9 @@ export function SiteFooter() {
         <p className="sub">
           Map data © <a href="https://openfreemap.org" rel="noopener" target="_blank">OpenFreeMap</a>, <a href="https://www.openmaptiles.org/" rel="noopener" target="_blank">OpenMapTiles</a> and <a href="https://www.openstreetmap.org/copyright" rel="noopener" target="_blank">OpenStreetMap</a> contributors.
         </p>
+        <p className="sub">
+          Also from the team behind TabeDog: <a href="https://reviewmytherapy.com" rel="noopener" target="_blank">Review My Therapy</a>, honest and anonymous therapist reviews.
+        </p>
       </div>
     </footer>
   );

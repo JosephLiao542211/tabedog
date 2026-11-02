@@ -17,7 +17,8 @@ body { background: var(--bg); color: var(--ink); font-family: var(--font-urbanis
 .sub { font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--muted); margin: 0; }
 
 /* ---- the app fills the viewport; the map fills the app ---- */
-.app { position: absolute; inset: 0; overflow: hidden; }
+/* clip, not hidden: a hidden box can still be scrolled by scrollIntoView, which shoves the whole app up when a card sits in the off-screen results sheet */
+.app { position: absolute; inset: 0; overflow: hidden; overflow: clip; }
 #map { position: absolute; inset: 0; background: #eef3ea; }
 .maplibregl-ctrl-attrib { font-size: 10px; background: rgba(253,255,252,.8) !important; }
 .maplibregl-popup { display: none; }
@@ -388,7 +389,7 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
 .grip { display: none; }
 
 @media (max-width: 800px) {
-  :root { --gap: 10px; --sheet: 44vh; --sheet-detail: 72vh; --sat: env(safe-area-inset-top, 0px); }
+  :root { --gap: 10px; --sheet: 44vh; --sheet-detail: 45vh; --sat: env(safe-area-inset-top, 0px); }
   /* the results sheet: the toolbar is the handle, the list is the body; the hook sets --sheet on <html> */
   /* the sheets sit a few px in from the screen edges, in line with the search bar, rather than wall to wall */
   aside { left: var(--gap); right: var(--gap); top: auto; bottom: 0; width: auto; height: var(--sheet); max-height: 100%; border-radius: 18px 18px 0 0; transition: height .28s cubic-bezier(.2,.8,.2,1), transform .28s cubic-bezier(.2,.8,.2,1); will-change: height; }
@@ -399,14 +400,22 @@ aside { position: absolute; left: var(--gap); top: var(--gap); bottom: var(--gap
   .grip i { display: block; width: 38px; height: 4px; border-radius: 2px; background: #cfd2cc; }
   #list { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .app.sheet-peek #list { overflow: hidden; }
-  /* the detail sheet: the photo is the handle, the facts scroll; pulled all the way down it closes */
+  /* the detail sheet, Google Maps style: the name is the handle, info and a sideways photo strip scroll under it; pulled all the way down it closes */
   #detail { left: var(--gap); right: var(--gap); top: auto; bottom: 0; width: auto; height: var(--sheet-detail); max-height: 100%; border-radius: 18px 18px 0 0; transition: height .28s cubic-bezier(.2,.8,.2,1); will-change: height; }
-  #gallery { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
-  #gallery img { -webkit-user-drag: none; pointer-events: none; }
-  #gallery .grip { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 80px; z-index: 2; }
-  #gallery .grip i { background: rgba(253,255,252,.85); box-shadow: 0 1px 3px rgba(0,0,0,.35); }
-  #gallery .nav { top: 56%; }
-  #facts { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  #sheetHead { padding: 4px 12px 8px 18px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+  #sheetHead .grip { width: 80px; margin: 0 auto 2px; margin-left: calc(50% - 43px); }
+  #sheetHead .head-row { display: flex; align-items: flex-start; gap: 10px; }
+  #sheetHead h2 { flex: 1; min-width: 0; font-size: 22px; line-height: 1.2; padding-top: 4px; }
+  #sheetHead .head-btns { flex: none; display: flex; gap: 6px; }
+  #sheetHead .gallery-btn { position: relative; inset: auto; width: 36px; height: 36px; background: var(--hover); box-shadow: none; }
+  #addTo, #detailUpsell { top: 66px; left: auto; right: 10px; }
+  #facts { padding-top: 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  #facts .sheet-meta { color: var(--muted); margin-top: -4px; }
+  #facts .btn-row .btn { border-radius: 999px; margin-bottom: 2px; }
+  .photo-strip { flex: none; display: flex; gap: 8px; margin: 4px -18px 6px; padding: 0 18px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 18px; scrollbar-width: none; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+  .photo-strip::-webkit-scrollbar { display: none; }
+  .photo-strip img { flex: none; width: min(74vw, 300px); aspect-ratio: 3 / 2; object-fit: cover; border-radius: 14px; background: var(--line); scroll-snap-align: start; -webkit-user-drag: none; }
+  .photo-strip.single img { width: 100%; }
   /* mid-drag the sheets follow the finger exactly; the easing is only for the snap */
   html.sheet-drag aside, html.sheet-drag #detail, html.sheet-drag #recenter, html.sheet-drag #listsWrap { transition: none; }
   /* the search bar spans the top under the status bar; its quick searches scroll sideways to the screen edges */

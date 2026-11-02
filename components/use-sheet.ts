@@ -12,6 +12,9 @@ const ORDER: SheetStop[] = ["peek", "half", "full"];
 const SLOP = 6; // px of movement before a touch on the header counts as a drag rather than a tap
 const DISMISS = 70; // px below "peek" that dismisses a sheet that can be dismissed
 
+/** Rough opening height of the detail sheet (fraction of the screen), for use before it can be measured. */
+export const DETAIL_PEEK = 0.45;
+
 export function useMobile(query = "(max-width: 800px)") {
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -134,16 +137,18 @@ export function useSheet({ active, cssVar, stops, initial = "half", handle, body
   // body: a swipe up grows the sheet until it's full, then scrolls; a swipe down at the top of the list shrinks it
   useEffect(() => {
     const el = body?.current; if (!el || !active) return;
-    let y0 = 0, taking = false, decided = false;
-    const ts = (e: TouchEvent) => { if (e.touches.length !== 1) return; y0 = e.touches[0].clientY; taking = false; decided = false; };
+    let x0 = 0, y0 = 0, taking = false, decided = false;
+    const ts = (e: TouchEvent) => { if (e.touches.length !== 1) return; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; taking = false; decided = false; };
     const tm = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
       const y = e.touches[0].clientY;
       if (!decided) {
-        const dy = y - y0; if (Math.abs(dy) < SLOP) return;
+        const dx = e.touches[0].clientX - x0, dy = y - y0;
+        if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
         decided = true;
         const canGrow = S.h < stopsRef.current().full - 1;
-        taking = (dy > 0 && el.scrollTop <= 0) || (dy < 0 && canGrow);
+        // a sideways swipe belongs to whatever scrolls sideways in the body (the photo strip), never the sheet
+        taking = Math.abs(dy) > Math.abs(dx) && ((dy > 0 && el.scrollTop <= 0) || (dy < 0 && canGrow));
         if (taking) begin(y0);
       }
       if (taking) { e.preventDefault(); move(y); }
