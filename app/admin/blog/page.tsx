@@ -42,6 +42,7 @@ export default async function AdminPostsPage({ searchParams }: { searchParams: P
                   </span>
                 </Link>
                 <span className={`cms-status ${p.status === "draft" ? "draft" : scheduled ? "sched" : "live"}`}>{p.status === "draft" ? "Draft" : scheduled ? `Scheduled ${formatDate(p.published_at)}` : formatDate(p.published_at)}</span>
+                {p.status === "published" && !scheduled && <Link href={`/admin/pinterest?post=${p.id}`} className="cms-btn-ghost">Pins</Link>}
                 {p.status === "published" && !scheduled && <Link href={postUrl(p.slug)} target="_blank" className="cms-btn-ghost">View</Link>}
               </li>
             );
